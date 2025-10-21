@@ -1,0 +1,45 @@
+#!/bin/bash
+# Extract agent configuration elements from Agents.json
+set -euo pipefail
+shopt -s inherit_errexit shift_verbose extglob nullglob
+
+VERSION='1.0.1'
+SCRIPT_PATH=$(realpath -- "$0")
+SCRIPT_DIR=${SCRIPT_PATH%/*}
+SCRIPT_NAME=${SCRIPT_PATH##*/}
+readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME
+
+# Error handling
+error() { >&2 echo "$SCRIPT_NAME: ✗ $*"; }
+
+if (($#==0)) || [[ $* == *'-h'* ]]; then
+  >&2 echo "usage: $SCRIPT_NAME AgentTag [fieldname]"
+  >&2 echo "$SCRIPT_NAME leet systemprompt"
+  exit 0
+fi
+
+AGENTS_JSON=$(locate -b '\Agents.json' | grep '/Agents/Agents.json' || echo '')
+[[ -n "$AGENTS_JSON" ]] || {
+  error "Agents.json not found"
+  exit 1
+}
+
+declare -- agent_tag=${1:-Leet}
+declare -- fieldname="${2:-systemprompt}"
+
+systemprompt=$(
+  jq -r ".\"$(jq -r 'keys[]' "$AGENTS_JSON" \
+    | grep -i "^$agent_tag")\".$fieldname" "$AGENTS_JSON"
+  )
+
+if [[ -z $systemprompt || $systemprompt == null ]]; then
+  error "'$agent_tag' not found"
+  echo ''
+  exit 1
+fi
+
+echo "$systemprompt"
+
+exit 0
+
+#fin

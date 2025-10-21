@@ -1,0 +1,29 @@
+#!/bin/bash
+# Bash completion for claude.init script
+
+_claude_init_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # Available options for claude.init
+  opts="-h --help --version"
+
+  case ${prev} in
+    claude.init)
+      COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # Default completion
+  COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+}
+
+# Register the completion function
+complete -F _claude_init_completion claude.init
+
+#fin

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Create canonical CLAUDE.md in current directory
+set -euo pipefail
+shopt -s inherit_errexit shift_verbose extglob nullglob
+
+VERSION='1.0.3'
+SCRIPT_PATH=$(realpath -- "$0")
+SCRIPT_NAME=${SCRIPT_PATH##*/}
+SCRIPT_DIR=${SCRIPT_PATH%/*}
+readonly -- VERSION SCRIPT_PATH SCRIPT_NAME SCRIPT_DIR
+
+# --------------------------------------------------------------------------------
+main() {
+  # Handle help/version flags
+  if [[ ${1:-} == '-h' || ${1:-} == '--help' || ${1:-} == '--version' ]]; then
+    echo "$SCRIPT_NAME $VERSION - Create canonical CLAUDE.md in current directory"
+    exit 0
+  fi
+
+  # Update claude
+  sudo claude update
+
+  # Create .gudang directory
+  mkdir -p .gudang
+
+  # Bash coding standard
+  if [[ ! -f BASH-CODING-STANDARD.md ]]; then
+    [[ -L BASH-CODING-STANDARD.md ]] ||  ln -fs /ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md BASH-CODING-STANDARD.md
+    echo BASH-CODING-STANDARD.md >>.gitignore
+  fi
+  
+  # Check if CLAUDE.md exists
+  if [[ -f ./CLAUDE.md ]]; then
+    echo "CLAUDE.md already exists in $PWD."
+    read -r -n 1 -p 'Append canonical info? y/n '
+    [[ ${REPLY,,} == y ]] && cat -s "$SCRIPT_DIR"/CLAUDE.canonical.md >> ./CLAUDE.md || true
+  else
+    read -r -n 1 -p "Init claude in $PWD? y/n "
+    [[ ${REPLY,,} == y ]] && cp -p "$SCRIPT_DIR"/CLAUDE.canonical.md ./CLAUDE.md || true
+  fi
+  echo
+  
+  echo CLAUDE.md >>.gitignore
+  echo .gudang >>.gitignore
+  remblanks <.gitignore |sort -u >.gitignore2
+  mv .gitignore2 .gitignore
+  
+  # Execute claude
+  exec claude.x -T leet
+}
+
+main "$@"
+#fin
