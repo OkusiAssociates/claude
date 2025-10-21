@@ -1,5 +1,5 @@
 #!/bin/bash
-#shellcheck disable=SC2034  # allowedTools/appendSystemPrompt arrays populated dynamically in main()
+#shellcheck disable=SC2015
 # Wrapper for claude code with 'dangerous' permissions and optional Agent system prompts
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
@@ -9,6 +9,12 @@ SCRIPT_PATH=$(realpath -- "$0")
 SCRIPT_DIR=${SCRIPT_PATH%/*}
 SCRIPT_NAME=${SCRIPT_PATH##*/}
 readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME
+
+declare -- AGENTS_JSON="${SCRIPT_DIR}/agents/Agents.json"
+if [[ ! -f "$AGENTS_JSON" ]]; then
+  AGENTS_JSON=$(locate -b '\Agents.json' | grep '/Agents/Agents.json' || echo '')
+fi
+readonly -- AGENTS_JSON
 
 if [[ -t 2 ]]; then
   declare -- RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
@@ -20,6 +26,7 @@ info() { ((VERBOSE)) || return 0; >&2 echo "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
 error() { >&2 echo "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
 die() { (($#>1)) && error "${@:2}"; exit "${1:0}"; }
 s() { (( ${1:-1} == 1 )) || echo -n 's'; }
+#shellcheck disable=SC2120
 trim() {
   if (($#)); then
     local -- v
@@ -41,9 +48,6 @@ trim() {
 
 
 show_help() {
-  local -- agents_json
-  agents_json=$(locate -b '\Agents.json' | grep '/Agents/Agents.json' || echo 'Agents.json')
-
   cat <<EOT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   $SCRIPT_NAME $VERSION - 'dangerous' wrapper for claude code
@@ -51,13 +55,19 @@ show_help() {
 
 DESCRIPTION
     Runs claude with 'dangerous' permissions (unrestricted file operations)
-    and optional Agent system prompts loaded from '$(basename -- "$agents_json")'.
+    and optional Agent system prompts loaded from Agents.json.
+
+    Agent definitions are loaded from:
+      1. Bundled: $SCRIPT_DIR/agents/Agents.json (included in repository)
+      2. Fallback: System-wide Agents.json (found via locate)
 
 USAGE
     $SCRIPT_NAME [OPTIONS] [PROMPT]
 
 OPTIONS
     -T AGENT            Load agent template (see Available Agents below)
+                        Case-insensitive matching supported
+
     -n, --new           Start fresh conversation (don't continue previous)
     --no-continue       Alias for --new
 
@@ -65,6 +75,7 @@ OPTIONS
     -q, --quiet         Suppress informational messages
 
     -h, --help          Show this help message
+    -V, --version       Show version information
 
 DANGEROUS DEFAULTS
     The following permissions are automatically configured:
@@ -90,30 +101,57 @@ PASS-THROUGH CLAUDE OPTIONS
     (See 'claude --help' for complete list)
 
 EXAMPLES
+    Show version:
+        $SCRIPT_NAME --version
+        $SCRIPT_NAME -V
+
     Interactive session with dangerous permissions:
         $SCRIPT_NAME
 
     Load specific agent template:
         $SCRIPT_NAME -T leet
-        $SCRIPT_NAME -T mydharma
+        $SCRIPT_NAME -T trans
+        $SCRIPT_NAME -T LEET          # Case-insensitive
+
+    Use agent wrapper scripts (recommended):
+        agents/leet                   # Leet agent with BCS context
+        agents/bcs-compliance         # BCS compliance expert
+        agents/trans                  # Translation specialist
 
     Add additional context directories:
         $SCRIPT_NAME -T leet --add-dir /data --add-dir /var/www
 
     One-shot query (auto-enables --print):
         $SCRIPT_NAME "Explain the main() function in script.sh"
-        $SCRIPT_NAME -T trans "Convert this bash script to Python"
+        $SCRIPT_NAME -T trans "Translate this Indonesian text"
 
     Fresh conversation with verbose output:
         $SCRIPT_NAME --new -vv -T leet
 
+    Debug mode (shows full command):
+        $SCRIPT_NAME -vv --help       # Shows claude_cmd array
+
 AVAILABLE AGENTS
 $(readarray -t Agents < <(
-    jq -r 'keys[]' "$agents_json" | cut -d' ' -f1 | trim
+    #shellcheck disable=SC2120
+    jq -r 'keys[]' "$AGENTS_JSON" | cut -d' ' -f1 | trim
     )
 echo "${Agents[*]}" | fold -s -w 72 |sed 's/^/    /g')
 
     (Use 'dv2-agents list' for detailed agent information)
+
+NOTES
+    Agents.json Location:
+      Current: $AGENTS_JSON
+      Source:  /ai/scripts/dejavu2-cli/Agents/Agents.json
+
+    For developers with dejavu2-cli:
+      - Agents.json auto-syncs when using './.gitcommit'
+      - Manual sync: agents/sync-agents-json
+
+    For end users:
+      - Agents.json is bundled in the repository
+      - No external dependencies required
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOT
@@ -135,10 +173,9 @@ declare -a claude_cmd=(
 
 main() {
   local -a reference_files=()
-  local -- agents_json agent_tag agent_key systemprompt ref_file
+  local -- agent_tag agent_key systemprompt ref_file
 
-  agents_json=$(locate -b '\Agents.json' | grep '/Agents/Agents.json' || echo '')
-  [[ -n "$agents_json" ]] || die 1 'Agents.json not found'
+  [[ -n "$AGENTS_JSON" ]] || die 1 'Agents.json not found'
 
   # Parse arguments
   local -i query_flag=0 continue_flag=1
@@ -157,24 +194,28 @@ main() {
         show_help
         return 0
         ;;
+      -V|--version)
+        echo "$SCRIPT_NAME $VERSION"
+        return 0
+        ;;
       -T)
         (($# > 1)) || die 22 "Option ${1@Q} requires an argument"
         shift
         agent_tag=$1
 
         # Extract matching key from Agents.json (case-insensitive)
-        agent_key=$(jq -r 'keys[]' "$agents_json" | grep -i "^$agent_tag" | head -n1)
-        [[ -n "$agent_key" ]] || die 1 "Agent ${agent_tag@Q} not found in $agents_json"
+        agent_key=$(jq -r 'keys[]' "$AGENTS_JSON" | grep -i "^$agent_tag" | head -n1)
+        [[ -n "$agent_key" ]] || die 1 "Agent ${agent_tag@Q} not found in $AGENTS_JSON"
 
         # Get systemprompt
-        systemprompt=$(jq -r ".\"$agent_key\".systemprompt" "$agents_json")
+        systemprompt=$(jq -r ".\"$agent_key\".systemprompt" "$AGENTS_JSON")
         [[ -n "$systemprompt" && "$systemprompt" != null ]] || die 1 "No systemprompt for agent ${agent_tag@Q}"
         claude_cmd+=(--append-system-prompt "$systemprompt")
 
         info "Loading Agent ${agent_tag@Q}"
 
         # Get knowledgebase files
-        readarray -t reference_files < <(jq -r ".\"$agent_key\".knowledgebase" "$agents_json")
+        readarray -t reference_files < <(jq -r ".\"$agent_key\".knowledgebase" "$AGENTS_JSON")
 
         if ((${#reference_files[@]}==0)) || [[ ${reference_files[0]} == null || -z ${reference_files[0]} ]]; then
           reference_files=()
@@ -253,6 +294,7 @@ main() {
   ((VERBOSE)) \
       && info "$(declare -p claude_cmd | tr '[' $'\n')" || :
 
+  echo -ne "\033]0;◯ Leet .../$(basename -- "$PWD")\007"
   exec "$(command -v claude)" "${claude_cmd[@]}"
 }
 

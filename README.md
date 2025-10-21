@@ -1,6 +1,6 @@
 # Claude Code Utilities
 
-A comprehensive toolkit for extending and customizing Claude Code CLI with advanced features including agent templates, BCS compliance checking, and SDK examples.
+A comprehensive toolkit for extending and customizing Claude Code CLI with advanced features including agent templates, project initialization, and SDK examples.
 
 ## Table of Contents
 
@@ -8,41 +8,46 @@ A comprehensive toolkit for extending and customizing Claude Code CLI with advan
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Scripts Reference](#scripts-reference)
-- [SDK Examples](#sdk-examples)
+- [Core Scripts](#core-scripts)
+  - [claude.x](#claudex)
+  - [claude.init](#claudeinit)
+  - [claude.update](#claudeupdate)
 - [Agent System](#agent-system)
-- [BCS Compliance](#bcs-compliance)
+- [SDK Examples](#sdk-examples)
+- [Skills System](#skills-system)
 - [Project Structure](#project-structure)
 - [Requirements](#requirements)
-- [Contributing](#contributing)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
 
 ## Overview
 
 This repository provides a suite of wrapper scripts and utilities for Claude Code CLI that enable:
-- Running Claude with custom agent templates and system prompts
-- Bash Coding Standard (BCS) compliance checking
-- Project initialization and configuration management
-- SDK integration examples for programmatic access
+- **Agent Templates** - Load specialized AI personas with custom system prompts and knowledge bases
+- **Dangerous Mode** - Pre-configured permissions for unrestricted file operations
+- **Project Initialization** - Streamlined setup with canonical configurations
+- **SDK Integration** - Python examples demonstrating programmatic Claude access
+- **Skills System** - Documentation and examples for Claude Code skills development
 
 ## Features
 
 ◉ **Agent Template System** - Load specialized AI agents with custom system prompts and knowledge bases
 ◉ **Dangerous Mode Wrapper** - Pre-configured permissions for unrestricted file operations
-◉ **BCS Integration** - Built-in Bash Coding Standard compliance checking
+◉ **BCS Integration** - Bash Coding Standard compliance awareness
 ◉ **SDK Examples** - Python examples demonstrating Claude Agent SDK usage
 ◉ **Auto-initialization** - Streamlined project setup with canonical configurations
+◉ **Skills Framework** - Comprehensive documentation for building Claude Code skills
 
 ## Installation
 
 ### Prerequisites
 
-- Node.js LTS (v22.x or higher)
-- npm configured for global packages
-- Claude Code CLI installed
+- **Node.js LTS** (v22.x or higher)
+- **npm** configured for global packages
+- **Claude Code CLI** installed
+- **Python 3.12+** (for SDK examples)
 
 ### Quick Install
-
-For detailed installation instructions, see [claude-install.md](./claude-install.md).
 
 ```bash
 # 1. Install Node.js LTS
@@ -63,6 +68,8 @@ claude --version
 cd /ai/scripts/claude
 ```
 
+For detailed installation instructions, see [claude-install.md](./claude-install.md).
+
 ## Quick Start
 
 ### Basic Usage
@@ -79,29 +86,31 @@ cd /path/to/project
 /ai/scripts/claude/claude.init
 ```
 
-### With Agent Templates
+### Using Agent Templates
 
 ```bash
-# Use the BCS compliance agent
-./claude.x.bcs-compliance
+# List available agents
+dv2-agents list
 
-# Use the leet agent with additional directories
-./claude.x -T leet --add-dir /path/to/additional/context
+# Load an agent template
+./claude.x -T leet
+
+# One-shot query with agent
+./claude.x -T trans "Convert this bash script to Python"
 ```
 
-## Scripts Reference
+## Core Scripts
 
 ### claude.x
 
 Main wrapper script for Claude Code with enhanced permissions and agent support.
 
-**Location:** `/ai/scripts/claude/claude.x`
 **Version:** 1.0.4
 **Purpose:** Run Claude with 'dangerous' settings and optional Agent system prompts
 
 **Usage:**
 ```bash
-claude.x [-h|--help] [-T agent] [--claude_opts...] [prompt]
+claude.x [OPTIONS] [PROMPT]
 ```
 
 **Key Features:**
@@ -112,26 +121,12 @@ claude.x [-h|--help] [-T agent] [--claude_opts...] [prompt]
 - Multiple working directories support
 
 **Options:**
+- `-T AGENT` - Load agent template (e.g., leet, trans, sarki)
 - `-n, --new, --no-continue` - Start fresh conversation
-- `-T AGENT` - Load agent template (e.g., leet, trans, mydharma)
-- `-v, --verbose` - Increase verbosity
+- `-v, --verbose` - Increase verbosity (repeatable: -vv, -vvv)
 - `-q, --quiet` - Suppress informational messages
 - `-h, --help` - Show help message
-
-**Examples:**
-```bash
-# Basic usage
-claude.x
-
-# Load specific agent
-claude.x -T leet
-
-# Add additional context directories
-claude.x -T mydharma --add-dir /data
-
-# One-shot query with agent
-claude.x -T trans "Translate this code to Python"
-```
+- `-V, --version` - Show version information
 
 **Default Directories:**
 The script automatically adds these directories to Claude's context:
@@ -141,7 +136,25 @@ The script automatically adds these directories to Claude's context:
 - `/usr/local/`
 - `/usr/share`
 
-**See:** [claude.x documentation](./docs/claude.x.md) for detailed information
+**Examples:**
+```bash
+# Basic usage
+./claude.x
+
+# Load specific agent
+./claude.x -T leet
+
+# Add additional context directories
+./claude.x -T leet --add-dir /data
+
+# One-shot query with agent
+./claude.x -T trans "Translate this code to Python"
+
+# Fresh conversation with verbose output
+./claude.x --new -vv -T leet
+```
+
+**See also:** [docs/claude.x.md](./docs/claude.x.md)
 
 ---
 
@@ -149,7 +162,6 @@ The script automatically adds these directories to Claude's context:
 
 Project initialization script that sets up Claude configuration files.
 
-**Location:** `/ai/scripts/claude/claude.init`
 **Version:** 1.0.3
 **Purpose:** Create canonical CLAUDE.md and initialize project structure
 
@@ -160,18 +172,24 @@ cd /path/to/project
 ```
 
 **What It Does:**
-1. Updates Claude to latest version
+1. Updates Claude to latest version (`sudo claude update`)
 2. Creates `.gudang` directory for project data
-3. Creates BASH-CODING-STANDARD.md symlink
+3. Creates BASH-CODING-STANDARD.md symlink to `/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md`
 4. Initializes or appends to CLAUDE.md with canonical configuration
-5. Updates .gitignore appropriately
-6. Launches claude.x
+5. Updates .gitignore with appropriate entries
+6. Launches `claude.x -T leet`
 
 **Interactive Prompts:**
 - Confirms appending to existing CLAUDE.md
 - Confirms initialization in new directories
 
-**See:** [claude.init documentation](./docs/claude.init.md)
+**Files Created/Modified:**
+- `CLAUDE.md` - Project-specific instructions for Claude
+- `.gudang/` - Project data directory
+- `BASH-CODING-STANDARD.md` - Symlink to BCS documentation
+- `.gitignore` - Updated with CLAUDE.md, .gudang, BASH-CODING-STANDARD.md
+
+**See also:** [docs/claude.init.md](./docs/claude.init.md)
 
 ---
 
@@ -179,7 +197,6 @@ cd /path/to/project
 
 Simple wrapper for updating Claude Code CLI.
 
-**Location:** `/ai/scripts/claude/claude.update`
 **Version:** 1.0.0
 **Purpose:** Update Claude CLI to latest version
 
@@ -188,87 +205,193 @@ Simple wrapper for updating Claude Code CLI.
 ./claude.update [options]
 ```
 
-All arguments are passed directly to `claude update`.
+All arguments are passed directly to `sudo claude update`.
+
+**Example:**
+```bash
+./claude.update --check
+```
 
 ---
 
-### claude.x.bcs-compliance
+## Agent System
 
-Specialized wrapper for Bash Coding Standard compliance checking.
+The agent system allows loading specialized AI personas with custom system prompts and knowledge bases.
 
-**Location:** `/ai/scripts/claude/claude.x.bcs-compliance`
-**Version:** 1.0.1
-**Purpose:** Launch Claude with BCS compliance expert agent
+### How Agents Work
 
-**Usage:**
-```bash
-./claude.x.bcs-compliance [options] [prompt]
+1. **Agent Discovery** - `claude.x` uses `locate -b '\Agents.json'` to find agent configuration
+2. **Agent Loading** - `-T AGENT` flag triggers case-insensitive lookup in Agents.json
+3. **System Prompt Injection** - Agent's `systemprompt` field passed via `--append-system-prompt`
+4. **Knowledge Base Loading** - Files in `knowledgebase` array are read and appended as additional system prompts
+5. **Execution** - Final `exec claude` with combined configuration
+
+### Agent Configuration Format
+
+Agents are defined in `Agents.json` (typically located in `/Agents/`):
+
+```json
+{
+  "agent-name": {
+    "systemprompt": "You are a specialized agent...",
+    "knowledgebase": [
+      "/path/to/reference/file1.md",
+      "/path/to/reference/file2.txt"
+    ]
+  }
+}
 ```
+
+### Agent Wrapper Scripts
+
+The `agents/` directory contains specialized wrapper scripts that load pre-configured agent profiles from the dejavu2 (dv2) `Agents.json` definitions. These shims provide convenient shortcuts to commonly-used agents with additional context and customizations.
+
+#### Available Wrappers
+
+**get-agent-element** - Agent Configuration Utility
+
+Extract elements from Agents.json for inspection and debugging.
+
+```bash
+# Get agent's system prompt
+agents/get-agent-element leet systemprompt
+
+# Get agent's knowledge base paths
+agents/get-agent-element leet knowledgebase
+```
+
+**Usage:** `agents/get-agent-element AGENT_TAG [FIELD]`
+
+---
+
+**leet** - Elite Full-Stack Programmer
+
+Elite full-stack programmer and AI systems engineer specialized in:
+- Ubuntu 24.04 LTS, Bash 5.2, Python 3.12
+- Web stack: Apache2, PHP 8.3, MySQL 8.0
+- Frontend: HTML5, CSS3, Bootstrap 5.3, FontAwesome
+- Coding principles: Efficient solutions, robust code
+
+**Special Features:**
+- Automatically adds BCS directory to context (`/ai/scripts/Okusi/bash-coding-standard`)
+- Appends BCS location reference to system prompt
+- Ideal for bash script development following BCS standards
+
+```bash
+# Interactive session with leet agent
+agents/leet
+
+# One-shot query
+agents/leet "Optimize this bash function for performance"
+
+# With additional options
+agents/leet -vv --add-dir /data "Review my script"
+```
+
+**Usage:** `agents/leet [OPTIONS] [PROMPT]`
+
+---
+
+**bcs-compliance** - Bash Coding Standard Expert
+
+BCS compliance specialist that combines the leet agent with expert-level BCS knowledge for comprehensive code analysis.
+
+**Capabilities:**
+- Complete knowledge of BASH-CODING-STANDARD.summary.md
+- Detailed compliance analysis and reporting
+- Rule-specific violation identification
+- Remediation recommendations
+
+```bash
+# Check script compliance
+agents/bcs-compliance "Analyze myscript.sh for BCS compliance"
+
+# Detailed review with verbose output
+agents/bcs-compliance -v "Review all scripts in src/ directory"
+```
+
+**Usage:** `agents/bcs-compliance [OPTIONS] [PROMPT]`
+
+**Note:** This wrapper loads the leet agent plus additional expert system prompt for BCS compliance checking.
+
+---
+
+**trans** - Translation Specialist
+
+Translation agent that converts foreign language content to English while preserving markdown formatting.
 
 **Features:**
-- Pre-loads leet agent
-- Adds BCS directory to context
-- Includes BCS expert system prompt
-- References `/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.summary.md`
+- Auto-detects source language
+- Preserves markdown structure and formatting
+- Adapts cultural references for English audience
+- Outputs clean translated content without commentary
 
-**Example:**
 ```bash
-./claude.x.bcs-compliance "Review this script for BCS compliance"
+# Translate a document
+agents/trans "Terjemahkan dokumen ini ke bahasa Inggris"
+
+# Translate with context preservation
+agents/trans < indonesian-doc.md > english-doc.md
 ```
 
-**See:** [BCS Compliance Reports](./BCS-COMPLIANCE-REPORT.md) for analysis results
+**Usage:** `agents/trans [OPTIONS] [PROMPT]`
 
 ---
 
-### claude.x.leet
+**sarki** - Sarcastic Jakarta Assistant
 
-Lightweight wrapper for the leet agent with BCS awareness.
+Personality-based agent for entertainment and testing. Responds as a young Jakarta woman with sarcastic, narcissistic personality traits.
 
-**Location:** `/ai/scripts/claude/claude.x.leet`
-**Version:** 1.0.1
-**Purpose:** Launch Claude with leet agent and BCS context
+**Characteristics:**
+- Responds in low-brow Jakarta Indonesian
+- Unhelpful and very sarcastic
+- Shallow and narcissistic persona
 
-**Usage:**
 ```bash
-./claude.x.leet [options] [prompt]
+# Interactive session
+agents/sarki
+
+# Single query
+agents/sarki "Tolong bantu saya"
 ```
+
+**Usage:** `agents/sarki [OPTIONS] [PROMPT]`
 
 ---
 
-### agents/get-agent-element
+### Using Agents
 
-Utility script to extract agent configuration from Agents.json.
-
-**Location:** `/ai/scripts/claude/agents/get-agent-element`
-**Purpose:** Extract agent elements (systemprompt, knowledgebase) from Agents.json
-
-**Usage:**
 ```bash
-get-agent-element AgentTag [fieldname]
+# List available agents
+dv2-agents list
+
+# Load an agent
+./claude.x -T leet
+
+# View agent configuration
+agents/get-agent-element leet
 ```
 
-**Parameters:**
-- `AgentTag` - Name of agent in Agents.json
-- `fieldname` - Optional field to extract (systemprompt, knowledgebase)
-
-**Example:**
-```bash
-# Get entire agent configuration
-get-agent-element leet
-
-# Get only the system prompt
-get-agent-element leet systemprompt
-```
+---
 
 ## SDK Examples
 
 The `sdk/` directory contains Python examples demonstrating various use cases for the Claude Agent SDK.
 
-### basic.py
+### Requirements
+
+```bash
+cd sdk
+pip install -r requirements.txt
+# Or manually:
+pip install claude-agent-sdk rich
+```
+
+### Examples
+
+#### basic.py - Basic Query
 
 Minimal example of querying Claude using the SDK.
-
-**Location:** `/ai/scripts/claude/sdk/basic.py`
 
 ```python
 import asyncio
@@ -283,26 +406,21 @@ asyncio.run(main())
 
 **Usage:**
 ```bash
-cd sdk
-python basic.py
+python sdk/basic.py
 ```
-
-**See:** [SDK Documentation](./docs/SDK.md#basic-usage)
 
 ---
 
-### custom-tools.py
+#### custom-tools.py - Custom MCP Tools
 
 Demonstrates creating custom MCP tools for Claude.
 
-**Location:** `/ai/scripts/claude/sdk/custom-tools.py`
-
 **Features:**
 - Custom tool definition with `@tool` decorator
-- MCP server creation
+- MCP server creation with `create_sdk_mcp_server`
 - Tool registration and invocation
 
-**Example Custom Tool:**
+**Example:**
 ```python
 @tool("greet", "Greet a user", {"name": str})
 async def greet(args: dict[str, Any]) -> dict[str, Any]:
@@ -316,19 +434,16 @@ async def greet(args: dict[str, Any]) -> dict[str, Any]:
 
 **Usage:**
 ```bash
-cd sdk
-python custom-tools.py
+python sdk/custom-tools.py
 ```
 
-**See:** [SDK Documentation](./docs/SDK.md#custom-tools)
+**Tool Naming:** Tools are named `mcp__{server_name}__{tool_name}`
 
 ---
 
-### inbuild-tools.py
+#### inbuild-tools.py - Built-in Tools
 
 Shows how to use Claude's built-in tools (Read, Write) with custom options.
-
-**Location:** `/ai/scripts/claude/sdk/inbuild-tools.py`
 
 **Features:**
 - Restricted tool access (`Read`, `Write` only)
@@ -337,19 +452,15 @@ Shows how to use Claude's built-in tools (Read, Write) with custom options.
 
 **Usage:**
 ```bash
-cd sdk
-python inbuild-tools.py
+python sdk/inbuild-tools.py
+# Creates greeting.txt
 ```
-
-**See:** [SDK Documentation](./docs/SDK.md#built-in-tools)
 
 ---
 
-### agent-options.py
+#### agent-options.py - Agent Configuration
 
 Demonstrates advanced agent configuration options.
-
-**Location:** `/ai/scripts/claude/sdk/agent-options.py`
 
 **Features:**
 - Custom system prompts
@@ -367,113 +478,95 @@ options = ClaudeAgentOptions(
 
 **Usage:**
 ```bash
-cd sdk
-python agent-options.py
+python sdk/agent-options.py
+# Creates test/ directory
 ```
 
-**See:** [SDK Documentation](./docs/SDK.md#agent-options)
+---
 
-## Agent System
+### SDK Test Server
 
-The agent system allows loading specialized AI personas with custom system prompts and knowledge bases.
+Located at `sdk/test/server.py` - test server for SDK development.
 
-### Agent Configuration
+**See also:** [docs/SDK.md](./docs/SDK.md) for comprehensive SDK documentation.
 
-Agents are defined in `Agents.json` (typically located via `locate -b '\Agents.json'`).
+---
 
-**Structure:**
-```json
-{
-  "agent-name": {
-    "systemprompt": "You are a specialized agent...",
-    "knowledgebase": [
-      "/path/to/reference/file1.md",
-      "/path/to/reference/file2.txt"
-    ]
-  }
-}
-```
+## Skills System
 
-### Using Agents
+The `skills/` directory contains comprehensive documentation for building Claude Code skills.
 
-```bash
-# List available agents
-dv2-agents list
+### Documentation Files
 
-# Load an agent
-claude.x -T agent-name
+- **00-README.md** - Skills system overview
+- **01-Overview.md** - Conceptual introduction to skills
+- **02-SKILL-Format-Specification.md** - Detailed skill format specification
+- **03-Architecture-Progressive-Disclosure.md** - Progressive disclosure architecture
+- **04-Installation-Setup.md** - Installation and setup guide
+- **05-API-Integration.md** - API integration documentation
+- **06-Best-Practices.md** - Best practices for skill development
+- **07-Security-Permissions.md** - Security and permissions guide
+- **08-Example-Skills-Catalog.md** - Catalog of example skills
+- **09-Skills-vs-MCP.md** - Skills vs MCP comparison
+- **10-Limitations-Constraints.md** - Known limitations and constraints
+- **11-Quick-Reference.md** - Quick reference guide
 
-# View agent configuration
-agents/get-agent-element agent-name
-```
+### Skills Repository
 
-### Available Agents
+**Note:** The `skills/repos/` directory contains skill examples but is excluded from version control via `.gitignore`. See individual skill documentation for details.
 
-The available agents depend on your `Agents.json` configuration. Common agents include:
-- `leet` - Elite coding standards expert
-- `trans` - Translation specialist
-- `mydharma` - Custom project assistant
-
-Use `dv2-agents list` to see all available agents in your system.
-
-## BCS Compliance
-
-### Bash Coding Standard Integration
-
-This toolkit includes built-in support for the [Bash Coding Standard (BCS)](https://github.com/Open-Technology-Foundation/bash-coding-standard).
-
-**Key Files:**
-- `BASH-CODING-STANDARD.md` - Symlink to BCS documentation
-- `BCS-COMPLIANCE-REPORT.md` - Latest compliance analysis
-- `BCS-FIXES-APPLIED.md` - Record of applied fixes
-
-### Running BCS Compliance Checks
-
-```bash
-# Interactive compliance checking
-./claude.x.bcs-compliance
-
-# With specific script
-./claude.x.bcs-compliance "Check script.sh for BCS compliance"
-```
-
-### Compliance Reports
-
-See [BCS-COMPLIANCE-REPORT.md](./BCS-COMPLIANCE-REPORT.md) for detailed analysis of scripts in this repository.
-
-**Current Repository Compliance:** 60%
-
-▲ **Priority Issues:**
-- Missing `shopt` settings in all scripts
-- Missing metadata in some utility scripts
-- Syntax errors in `agents/get-agent-element`
+---
 
 ## Project Structure
 
 ```
 /ai/scripts/claude/
 ├── README.md                          # This file
-├── claude.x                           # Main wrapper script
-├── claude.init                        # Project initialization
-├── claude.update                      # Update wrapper
-├── claude.x.bcs-compliance            # BCS compliance checker
-├── claude.x.leet                      # Leet agent wrapper
-├── .bash_completion                   # Bash completion support
-├── BASH-CODING-STANDARD.md            # Symlink to BCS docs
-├── BCS-COMPLIANCE-REPORT.md           # BCS analysis report
-├── BCS-FIXES-APPLIED.md               # Applied fixes log
-├── CLAUDE.canonical.md                # Canonical config template
+├── LICENSE                            # License file
+│
+├── claude.x                           # Main wrapper script (v1.0.4)
+├── claude.init                        # Project initialization (v1.0.3)
+├── claude.update                      # Update wrapper (v1.0.0)
 ├── claude-install.md                  # Installation guide
-├── prompt-structure.md                # Prompt engineering guide
-├── .claude/                           # Claude configuration
+│
+├── CLAUDE.canonical.md                # Canonical config template
+├── CLAUDE.user.md                     # Symlink to ~/.claude/CLAUDE.md
+├── .bash_completion                   # Bash completion support
+│
 ├── agents/                            # Agent utilities
-│   └── get-agent-element              # Agent config extractor
+│   ├── Agents.json                    # Agent definitions (synced from dejavu2-cli)
+│   ├── sync-agents-json               # Sync utility for Agents.json
+│   ├── get-agent-element              # Agent config extractor
+│   ├── bcs-compliance                 # BCS compliance agent
+│   ├── leet                           # Leet agent
+│   ├── sarki                          # Sarki agent
+│   └── trans                          # Translation agent
+│
 ├── sdk/                               # SDK examples
-│   ├── basic.py                       # Basic usage
+│   ├── requirements.txt               # Python dependencies
+│   ├── basic.py                       # Basic usage example
 │   ├── custom-tools.py                # Custom tool creation
 │   ├── inbuild-tools.py               # Built-in tools usage
-│   └── agent-options.py               # Agent configuration
-└── docs/                              # Documentation (generated)
+│   ├── agent-options.py               # Agent configuration
+│   ├── greeting.txt                   # Example output file
+│   └── test/
+│       └── server.py                  # Test server
+│
+├── skills/                            # Skills documentation
+│   ├── 00-README.md                   # Skills overview
+│   ├── 01-Overview.md                 # Conceptual introduction
+│   ├── 02-SKILL-Format-Specification.md
+│   ├── 03-Architecture-Progressive-Disclosure.md
+│   ├── 04-Installation-Setup.md
+│   ├── 05-API-Integration.md
+│   ├── 06-Best-Practices.md
+│   ├── 07-Security-Permissions.md
+│   ├── 08-Example-Skills-Catalog.md
+│   ├── 09-Skills-vs-MCP.md
+│   ├── 10-Limitations-Constraints.md
+│   └── 11-Quick-Reference.md
+│
+└── docs/                              # Additional documentation
     ├── claude.x.md                    # claude.x details
     ├── claude.init.md                 # claude.init details
     └── SDK.md                         # SDK comprehensive guide
@@ -489,17 +582,28 @@ See [BCS-COMPLIANCE-REPORT.md](./BCS-COMPLIANCE-REPORT.md) for detailed analysis
 - **Node.js:** v22.x LTS or higher
 - **Memory:** Minimum 4GB RAM recommended
 
-### Dependencies
+### Command-line Dependencies
 
-**Command-line Tools:**
+**Required:**
 - `jq` - JSON processing (required for agent system)
 - `locate` - File location (required for agent discovery)
 - `curl` - HTTP client (for installation)
 - `realpath` - Path resolution
 
-**Python Packages (for SDK examples):**
+**Optional:**
+- `remblanks` - .gitignore cleanup in claude.init
+- `shellcheck` - Shell script linting
+
+### Python Dependencies (for SDK)
+
 ```bash
 pip install claude-agent-sdk rich
+```
+
+Or use the requirements file:
+```bash
+cd sdk
+pip install -r requirements.txt
 ```
 
 ### Installation Verification
@@ -526,16 +630,17 @@ Add to your `~/.bashrc` or `~/.bash_profile`:
 # Claude utilities
 export PATH="/ai/scripts/claude:$PATH"
 
-# Optional: Default agent
-export CLAUDE_DEFAULT_AGENT="leet"
+# Optional: Bash completion
+source /ai/scripts/claude/.bash_completion
 ```
 
-### Bash Completion
+### Agent Configuration
 
-Bash completion is available in `.bash_completion`. Source it in your shell:
+Ensure your `Agents.json` is in a searchable location (typically `/Agents/Agents.json`).
 
+Update locate database if needed:
 ```bash
-source /ai/scripts/claude/.bash_completion
+sudo updatedb
 ```
 
 ### Project-Specific Configuration
@@ -550,47 +655,92 @@ cd /path/to/project
 This creates:
 - `CLAUDE.md` - Project instructions for Claude
 - `.gudang/` - Project data directory
-- `BASH-CODING-STANDARD.md` - BCS reference
+- `BASH-CODING-STANDARD.md` - BCS reference symlink
 
-## Contributing
+## Bash Coding Standard (BCS)
 
-### Development Standards
+This toolkit integrates with the [Bash Coding Standard](https://github.com/Open-Technology-Foundation/bash-coding-standard).
 
-All bash scripts in this repository follow the [Bash Coding Standard](https://github.com/Open-Technology-Foundation/bash-coding-standard).
+### BCS Reference
 
-**Key Requirements:**
+- `BASH-CODING-STANDARD.md` - Symlink to `/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md`
+
+### BCS Integration
+
+All bash scripts in this repository follow BCS requirements:
+
 - Shebang: `#!/bin/bash`
 - Error handling: `set -euo pipefail`
 - Shell options: `shopt -s inherit_errexit shift_verbose extglob nullglob`
 - Script metadata: VERSION, SCRIPT_PATH, SCRIPT_DIR, SCRIPT_NAME
 - End marker: `#fin`
 
-### Testing Changes
+### Using BCS Agent
 
 ```bash
-# Run shellcheck
-shellcheck script.sh
+# Load BCS compliance agent
+./claude.x -T leet --add-dir /ai/scripts/Okusi/bash-coding-standard
 
-# Check BCS compliance
-./claude.x.bcs-compliance "Check script.sh"
-
-# Test with verbose mode
-./claude.x -v -T leet "test query"
+# Or use specialized wrapper
+agents/bcs-compliance
 ```
 
-### Submitting Changes
+---
 
-1. Ensure scripts pass shellcheck
-2. Verify BCS compliance
-3. Update documentation
-4. Test all affected functionality
+## Development
+
+### Agents.json Synchronization
+
+The repository includes a copy of `Agents.json` from the [dejavu2-cli](https://github.com/Open-Technology-Foundation/dejavu2-cli) project. This file contains agent definitions (system prompts and knowledge bases) used by the agent wrapper scripts.
+
+**For developers with dejavu2-cli installed:**
+
+The `Agents.json` file is automatically synced when using `.gitcommit`:
+
+```bash
+# Automatic sync during commit
+./.gitcommit "your commit message"
+```
+
+This runs `agents/sync-agents-json` before staging files, ensuring the latest agent definitions are included in commits.
+
+**Manual sync:**
+
+```bash
+# Sync from dejavu2-cli
+agents/sync-agents-json
+```
+
+**For end users:**
+
+No action needed - `Agents.json` is included in the repository and tracked in version control. The agent wrappers will work out of the box.
+
+**How it works:**
+
+1. `claude.x` checks for `agents/Agents.json` first (bundled version)
+2. If not found, falls back to `locate` to find system-wide Agents.json
+3. Developers with dejavu2-cli get automatic sync via `.gitcommit`
+4. End users cloning from GitHub use the bundled version
+
+**Source:** `/ai/scripts/dejavu2-cli/Agents/Agents.json`
+
+---
 
 ## Troubleshooting
 
 ### Common Issues
 
 **Issue:** `Agents.json not found`
-**Solution:** Ensure Agents.json is in a searchable location or set the path explicitly
+**Solution:**
+- The bundled version should be at `agents/Agents.json`
+- For developers: Sync from dejavu2-cli: `agents/sync-agents-json`
+- Alternative: Update locate database to find system-wide version:
+```bash
+sudo updatedb
+locate -b '\Agents.json'
+```
+
+---
 
 **Issue:** Permission denied on scripts
 **Solution:**
@@ -598,13 +748,38 @@ shellcheck script.sh
 chmod +x claude.x claude.init claude.update
 ```
 
+---
+
 **Issue:** `claude: command not found`
-**Solution:** Verify Claude Code installation and PATH configuration
+**Solution:** Verify Claude Code installation and PATH configuration:
+```bash
+echo $PATH
+which claude
+npm list -g @anthropic-ai/claude-code
+```
+
+---
 
 **Issue:** SDK examples fail
 **Solution:** Install required Python packages:
 ```bash
+cd sdk
 pip install claude-agent-sdk rich
+```
+
+---
+
+**Issue:** `remblanks: command not found` during claude.init
+**Solution:** This is optional. The script will continue without it. To fix:
+- Install remblanks utility, or
+- Manually clean .gitignore after initialization
+
+---
+
+**Issue:** Agent not loading
+**Solution:** Check agent exists and verify configuration:
+```bash
+agents/get-agent-element your-agent-name
 ```
 
 ### Debug Mode
@@ -612,30 +787,37 @@ pip install claude-agent-sdk rich
 Enable verbose output for troubleshooting:
 
 ```bash
-./claude.x -v -v -T leet "your query"
+# Single verbose
+./claude.x -v -T leet
+
+# Double verbose (shows full command)
+./claude.x -vv -T leet
+
+# Triple verbose
+./claude.x -vvv -T leet
 ```
-
-## License
-
-See the LICENSE file in the repository root.
 
 ## References
 
 - [Claude Code Documentation](https://docs.claude.com/claude-code)
-- [Bash Coding Standard](https://github.com/Open-Technology-Foundation/bash-coding-standard)
 - [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk)
 - [Model Context Protocol (MCP)](https://modelcontextprotocol.io)
+- [Bash Coding Standard](https://github.com/Open-Technology-Foundation/bash-coding-standard)
 
 ## Support
 
 For issues and questions:
 - Check existing documentation in `docs/`
-- Review [BCS-COMPLIANCE-REPORT.md](./BCS-COMPLIANCE-REPORT.md)
-- Consult [prompt-structure.md](./prompt-structure.md) for prompt engineering guidance
+- Review skills documentation in `skills/`
+- Consult [claude-install.md](./claude-install.md) for installation issues
+
+## License
+
+See [LICENSE](./LICENSE) file in the repository root.
 
 ---
 
-**Version:** 1.0.0
-**Last Updated:** 2025-10-19
+**Version:** 2.0.0
+**Last Updated:** 2025-10-21
 
 #fin
