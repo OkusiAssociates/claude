@@ -4,6 +4,6 @@
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-claude.x -T TRANS "$@" 
+shlock -- claude.x -T TRANS "$@" 
 
 #fin

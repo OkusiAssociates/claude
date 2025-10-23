@@ -5,15 +5,18 @@ set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
 declare -- VERSION='1.0.1'
-declare -- SCRIPT_PATH=$(realpath -- "$0")
-declare -- SCRIPT_DIR=${SCRIPT_PATH%/*}
-declare -- SCRIPT_NAME=${SCRIPT_PATH##*/}
+#declare -- SCRIPT_PATH=$(realpath -- "$0")
+#declare -- SCRIPT_DIR=${SCRIPT_PATH%/*}
+#declare -- SCRIPT_NAME=${SCRIPT_PATH##*/}
 
-declare -- BCS_DIR=/ai/scripts/Okusi/bash-coding-standard
-declare -- BCS_NAME=BASH-CODING-STANDARD.rulet.md
-declare -- BCS_PATH="$BCS_DIR"/"$BCS_NAME"
+declare -r BCS_DIR=/ai/scripts/Okusi/bash-coding-standard
+declare -r BCS_NAME=data/BASH-CODING-STANDARD.rulet.md
+declare -r BCS_PATH="$BCS_DIR"/"$BCS_NAME"
 
-shlock leet -- claude.x -T leet \
+lockname="${PWD//\//-}"
+lockname=${lockname/-/}-leet
+
+shlock "$lockname" -- claude.x -T leet \
     "$@" \
     --add-dir "$BCS_DIR" \
     --append-system-prompt "Note: Full Bash Coding Standard (BCS) is located at '$BCS_PATH')."

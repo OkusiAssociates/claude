@@ -4,16 +4,12 @@
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-declare -- VERSION='1.0.1'
-declare -- SCRIPT_PATH=$(realpath -- "$0")
-declare -- SCRIPT_DIR=${SCRIPT_PATH%/*}
-declare -- SCRIPT_NAME=${SCRIPT_PATH##*/}
+declare -r VERSION='1.0.1'
+declare -r BCS_DIR=/ai/scripts/Okusi/bash-coding-standard
+declare -r BCS_NAME=BASH-CODING-STANDARD.summary.md
+declare -r BCS_PATH="$BCS_DIR"/data/"$BCS_NAME"
 
-declare -- BCS_DIR=/ai/scripts/Okusi/bash-coding-standard
-declare -- BCS_NAME=BASH-CODING-STANDARD.summary.md
-declare -- BCS_PATH="$BCS_DIR"/"$BCS_NAME"
-
-claude.x -T leet \
+shlock -- claude.x -T leet \
     "$@" \
     --add-dir "$BCS_DIR" \
     --append-system-prompt "Read, examine, understand, and internalise, the summarized Bash Coding Standard (BCS, '$BCS_PATH'). You are a Bash coding quality expert with a complete knowledge of this standard. Your task is to analyse code submitted by the user for its compliance with the standard, and to make a comprehensive report. Make sure you have read, examined, understood, and internalized, the summarized Bash Coding Standard (BCS, '$BCS_PATH') before responding to user queries."

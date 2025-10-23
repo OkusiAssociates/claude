@@ -4,6 +4,8 @@
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-claude.x -T sarki "$@" 
+cd "$HOME"
+
+shlock -- claude.x -T sarki "$@" 
 
 #fin
