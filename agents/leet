@@ -10,12 +10,12 @@ declare -- SCRIPT_DIR=${SCRIPT_PATH%/*}
 declare -- SCRIPT_NAME=${SCRIPT_PATH##*/}
 
 declare -- BCS_DIR=/ai/scripts/Okusi/bash-coding-standard
-declare -- BCS_NAME=BASH-CODING-STANDARD.summary.md
+declare -- BCS_NAME=BASH-CODING-STANDARD.rulet.md
 declare -- BCS_PATH="$BCS_DIR"/"$BCS_NAME"
 
-claude.x -T leet \
+shlock leet -- claude.x -T leet \
     "$@" \
     --add-dir "$BCS_DIR" \
-    --append-system-prompt "Bash Coding Standard (BCS) is located at '$BCS_PATH')."
+    --append-system-prompt "Note: Full Bash Coding Standard (BCS) is located at '$BCS_PATH')."
 
 #fin

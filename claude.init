@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#shellcheck disable=SC2015
 # Create canonical CLAUDE.md in current directory
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
@@ -31,12 +32,12 @@ main() {
   
   # Check if CLAUDE.md exists
   if [[ -f ./CLAUDE.md ]]; then
-    echo "CLAUDE.md already exists in $PWD."
-    read -r -n 1 -p 'Append canonical info? y/n '
-    [[ ${REPLY,,} == y ]] && cat -s "$SCRIPT_DIR"/CLAUDE.canonical.md >> ./CLAUDE.md || true
+    >&2 echo "CLAUDE.md already exists in $PWD."
+    >&2 read -r -n 1 -p 'Append canonical info? y/n '
+    [[ ${REPLY,,} == y ]] && cat -s "$SCRIPT_DIR"/CLAUDE.canonical.md >> ./CLAUDE.md ||:
   else
-    read -r -n 1 -p "Init claude in $PWD? y/n "
-    [[ ${REPLY,,} == y ]] && cp -p "$SCRIPT_DIR"/CLAUDE.canonical.md ./CLAUDE.md || true
+    >&2 read -r -n 1 -p "Init claude in $PWD? y/n "
+    [[ ${REPLY,,} == y ]] && cp -p "$SCRIPT_DIR"/CLAUDE.canonical.md ./CLAUDE.md ||:
   fi
   echo
   
@@ -46,7 +47,9 @@ main() {
   mv .gitignore2 .gitignore
   
   # Execute claude
-  exec claude.x -T leet
+  declare -a args=()
+  [[ -d .claude ]] && args=(--new) || args=(--continue)
+  exec claude.x -T leet "${args[@]}"
 }
 
 main "$@"
