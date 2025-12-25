@@ -1,30 +1,37 @@
 #!/bin/bash
-#shellcheck disable=SC2015
+#shellcheck disable=SC2015,SC2155
 # Wrapper for claude code with 'dangerous' permissions and optional Agent system prompts
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit extglob nullglob
 
-VERSION='1.0.5'
-SCRIPT_PATH=$(realpath -- "$0")
-SCRIPT_DIR=${SCRIPT_PATH%/*}
-SCRIPT_NAME=${SCRIPT_PATH##*/}
-readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME
+declare -r VERSION='1.0.8'
+declare -r SCRIPT_PATH=$(realpath -e -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
 
-declare -- AGENTS_JSON="${SCRIPT_DIR}/agents/Agents.json"
+declare -- AGENTS_JSON="$SCRIPT_DIR"/agents/Agents.json
 if [[ ! -f "$AGENTS_JSON" ]]; then
-  AGENTS_JSON=$(locate -b '\Agents.json' | grep '/Agents/Agents.json' || echo '')
+  declare -a locfiles=()
+  declare -- locfile
+  readarray -t locfiles < <(locate -b '\Agents.json' | grep -v checkpoint | grep 'Agents.json$')
+  for locfile in "${locfiles[@]}"; do
+    [[ -L $locfile ]] && continue
+    [[ -f $locfile ]] || continue
+    AGENTS_JSON="$locfile"
+    break
+  done
 fi
-readonly -- AGENTS_JSON
+readonly AGENTS_JSON
 
-if [[ -t 2 ]]; then
-  declare -- RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
-else
-  declare -- RED='' CYAN='' NC=''
-fi
 declare -i VERBOSE=0
+if [[ -t 2 ]]; then
+  declare -r RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  declare -r RED='' CYAN='' NC=''
+fi
 info() { ((VERBOSE)) || return 0; >&2 echo "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
 error() { >&2 echo "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
 die() { (($#>1)) && error "${@:2}"; exit "${1:0}"; }
+
 s() { (( ${1:-1} == 1 )) || echo -n 's'; }
 #shellcheck disable=SC2120
 trim() {
@@ -46,12 +53,20 @@ trim() {
   return 0
 }
 
+has_conversation() {
+  # Check if a conversation exists for the current directory
+  # Returns 0 (success) if conversation exists, 1 otherwise
+
+  local -- project_dir="${PWD//\//-}"  # Replace / with -
+  local -- project_path=/usr/share/claude/.claude/projects/"$project_dir"
+
+  # Check if directory exists and contains .jsonl files
+  [[ -d "$project_path" ]] && compgen -G "$project_path"/*.jsonl >/dev/null 2>&1
+}
 
 show_help() {
   cat <<EOT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  $SCRIPT_NAME $VERSION - 'dangerous' wrapper for claude code
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+$SCRIPT_NAME $VERSION - 'dangerous' wrapper for claude code
 
 DESCRIPTION
     Runs claude with 'dangerous' permissions (unrestricted file operations)
@@ -152,8 +167,6 @@ NOTES
     For end users:
       - Agents.json is bundled in the repository
       - No external dependencies required
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOT
 }
 
@@ -165,12 +178,6 @@ declare -ar addDirDefaultDirs=(
  /usr/share
 )
 
-declare -a claude_cmd=(
-  --allowedTools Read Write Edit Bash
-  --permission-mode acceptEdits
-  --dangerously-skip-permissions
-)
-
 main() {
   local -a reference_files=()
   local -- agent_tag agent_key systemprompt ref_file
@@ -178,8 +185,14 @@ main() {
   [[ -n "$AGENTS_JSON" ]] || die 1 'Agents.json not found'
 
   # Parse arguments
-  local -i query_flag=0 continue_flag=1
+  local -i query_flag=0 continue_flag=-1  # -1=auto-detect, 0=no, 1=yes
   local -a allowedTools=() appendSystemPrompt=() addDir=( "${addDirDefaultDirs[@]}" )
+  local -a claude_cmd=(
+    --allowedTools Read Write Edit Bash
+    --permission-mode acceptEdits
+  )
+  ((EUID==0)) || claude_cmd+=(--dangerously-skip-permissions)
+
 
   while (($#)); do
     case $1 in
@@ -196,6 +209,7 @@ main() {
         ;;
       -V|--version)
         echo "$SCRIPT_NAME $VERSION"
+        "$(command -v claude)" --version
         return 0
         ;;
       -T)
@@ -276,8 +290,21 @@ main() {
     shift || :
   done
 
-  ((continue_flag)) \
-      && claude_cmd+=(--continue)
+  # Handle conversation continuation
+  if ((continue_flag == -1)); then
+    # Auto-detect: only continue if conversation exists
+    if has_conversation; then
+      claude_cmd+=(--continue)
+      info 'Continuing existing conversation'
+    else
+      info 'No existing conversation found, starting fresh'
+    fi
+  elif ((continue_flag == 1)); then
+    # User explicitly requested --continue
+    claude_cmd+=(--continue)
+    info 'Continuing (explicit)'
+  fi
+  # If continue_flag == 0, don't add --continue (user said --new)
 
   ((${#allowedTools[@]})) \
       && claude_cmd+=(--allowedTools "${allowedTools[@]}")
@@ -299,5 +326,4 @@ main() {
 }
 
 main "$@"
-
 #fin

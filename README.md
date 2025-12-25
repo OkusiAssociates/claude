@@ -105,7 +105,7 @@ dv2-agents list
 
 Main wrapper script for Claude Code with enhanced permissions and agent support.
 
-**Version:** 1.0.4
+**Version:** 1.0.8
 **Purpose:** Run Claude with 'dangerous' settings and optional Agent system prompts
 
 **Usage:**
@@ -119,10 +119,12 @@ claude.x [OPTIONS] [PROMPT]
 - Dangerously skip permissions (auto-accept all operations)
 - Agent template loading from Agents.json
 - Multiple working directories support
+- Smart conversation continuation (auto-detects existing conversations)
 
 **Options:**
-- `-T AGENT` - Load agent template (e.g., leet, trans, sarki)
+- `-T AGENT` - Load agent template (e.g., leet, trans, sarki, draa)
 - `-n, --new, --no-continue` - Start fresh conversation
+- `-c, --continue` - Force continue previous conversation
 - `-v, --verbose` - Increase verbosity (repeatable: -vv, -vvv)
 - `-q, --quiet` - Suppress informational messages
 - `-h, --help` - Show help message
@@ -220,7 +222,7 @@ The agent system allows loading specialized AI personas with custom system promp
 
 ### How Agents Work
 
-1. **Agent Discovery** - `claude.x` uses `locate -b '\Agents.json'` to find agent configuration
+1. **Agent Discovery** - `claude.x` checks `agents/Agents.json` (bundled) first, falls back to `locate` for system-wide version
 2. **Agent Loading** - `-T AGENT` flag triggers case-insensitive lookup in Agents.json
 3. **System Prompt Injection** - Agent's `systemprompt` field passed via `--append-system-prompt`
 4. **Knowledge Base Loading** - Files in `knowledgebase` array are read and appended as additional system prompts
@@ -272,10 +274,22 @@ Elite full-stack programmer and AI systems engineer specialized in:
 - Frontend: HTML5, CSS3, Bootstrap 5.3, FontAwesome
 - Coding principles: Efficient solutions, robust code
 
+**Version:** 1.0.4
+
 **Special Features:**
 - Automatically adds BCS directory to context (`/ai/scripts/Okusi/bash-coding-standard`)
 - Appends BCS location reference to system prompt
+- Session locking via `shlock` (prevents concurrent sessions per directory)
+- Configurable max output tokens (default 32K, optional 64K)
+- Optional logging to `/var/log/leet.log`
 - Ideal for bash script development following BCS standards
+
+**Options:**
+- `-n, --new` - Start fresh conversation
+- `-c, --continue` - Resume previous conversation
+- `-s, --steal` - Steal lock from another session
+- `-M, --maxtokens` - Set max output tokens to 64000
+- `--setup` - Setup log file (requires sudo)
 
 ```bash
 # Interactive session with leet agent
@@ -286,6 +300,15 @@ agents/leet "Optimize this bash function for performance"
 
 # With additional options
 agents/leet -vv --add-dir /data "Review my script"
+
+# Steal lock from another session
+agents/leet --steal
+
+# Extended output tokens
+agents/leet -M "Generate comprehensive documentation"
+
+# Setup logging (one-time, requires sudo)
+sudo agents/leet --setup
 ```
 
 **Usage:** `agents/leet [OPTIONS] [PROMPT]`
@@ -356,6 +379,49 @@ agents/sarki "Tolong bantu saya"
 ```
 
 **Usage:** `agents/sarki [OPTIONS] [PROMPT]`
+
+---
+
+**draa** - Applied Anthropology Expert
+
+Applied Anthropology specialist (DrAA agent) providing insights into secular interpretations of human evolution, cultural development, and dharmic philosophy.
+
+**Version:** 1.0.0
+
+**Expertise:**
+- Evolutionary biology and human behavioral biology
+- Biological and cultural anthropology
+- Human cultural and technological evolution
+- Secular dharma and ethical philosophy
+- Geopolitics and cultural sociology
+
+**Features:**
+- Session locking via `shlock`
+- Configurable max output tokens
+- Optional logging to `/var/log/draa.log`
+
+**Options:**
+- `-n, --new` - Start fresh conversation
+- `-c, --continue` - Resume previous conversation
+- `-s, --steal` - Steal lock from another session
+- `-M, --maxtokens` - Set max output tokens to 64000
+- `--setup` - Setup log file (requires sudo)
+
+```bash
+# Interactive session with DrAA agent
+agents/draa
+
+# Query about human evolution
+agents/draa "Explain the role of cooperation in human evolution"
+
+# Query about dharma concepts
+agents/draa "What is secular dharma?"
+
+# Setup logging (one-time, requires sudo)
+sudo agents/draa --setup
+```
+
+**Usage:** `agents/draa [OPTIONS] [PROMPT]`
 
 ---
 
@@ -524,7 +590,7 @@ The `skills/` directory contains comprehensive documentation for building Claude
 ├── README.md                          # This file
 ├── LICENSE                            # License file
 │
-├── claude.x                           # Main wrapper script (v1.0.4)
+├── claude.x                           # Main wrapper script (v1.0.8)
 ├── claude.init                        # Project initialization (v1.0.3)
 ├── claude.update                      # Update wrapper (v1.0.0)
 ├── claude-install.md                  # Installation guide
@@ -538,6 +604,7 @@ The `skills/` directory contains comprehensive documentation for building Claude
 │   ├── sync-agents-json               # Sync utility for Agents.json
 │   ├── get-agent-element              # Agent config extractor
 │   ├── bcs-compliance                 # BCS compliance agent
+│   ├── draa                           # Applied Anthropology agent
 │   ├── leet                           # Leet agent
 │   ├── sarki                          # Sarki agent
 │   └── trans                          # Translation agent
@@ -593,6 +660,7 @@ The `skills/` directory contains comprehensive documentation for building Claude
 **Optional:**
 - `remblanks` - .gitignore cleanup in claude.init
 - `shellcheck` - Shell script linting
+- `shlock` - Session locking for agent wrappers (leet, draa)
 
 ### Python Dependencies (for SDK)
 
@@ -817,7 +885,7 @@ See [LICENSE](./LICENSE) file in the repository root.
 
 ---
 
-**Version:** 2.0.0
-**Last Updated:** 2025-10-21
+**Version:** 2.1.0
+**Last Updated:** 2025-12-24
 
 #fin

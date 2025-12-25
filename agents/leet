@@ -2,23 +2,67 @@
 #shellcheck disable=SC2034,SC2155
 # Launch claude.x with leet agent
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit extglob nullglob
 
-declare -- VERSION='1.0.1'
-#declare -- SCRIPT_PATH=$(realpath -- "$0")
-#declare -- SCRIPT_DIR=${SCRIPT_PATH%/*}
-#declare -- SCRIPT_NAME=${SCRIPT_PATH##*/}
+declare -- VERSION='1.0.4'
 
 declare -r BCS_DIR=/ai/scripts/Okusi/bash-coding-standard
-declare -r BCS_NAME=data/BASH-CODING-STANDARD.rulet.md
+declare -r BCS_NAME=data/BASH-CODING-STANDARD.summary.md
 declare -r BCS_PATH="$BCS_DIR"/"$BCS_NAME"
+declare -r LEET_LOG=/var/log/leet.log
 
-lockname="${PWD//\//-}"
-lockname=${lockname/-/}-leet
+declare -- lockname="${PWD//\//-}"; lockname=${lockname/-/}
 
-shlock "$lockname" -- claude.x -T leet \
-    "$@" \
-    --add-dir "$BCS_DIR" \
-    --append-system-prompt "Note: Full Bash Coding Standard (BCS) is located at '$BCS_PATH')."
+declare -a SHLOCK=()
 
+declare -ix CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
+
+while(($#)); do
+  case $1 in
+    -h|--help)
+      echo 'Usage: leet [-n|--new] [-c|--continue] [-s|--steal] [-M|--maxtokens] [--setup] ...'
+      echo "  --setup    Setup log file at ${LEET_LOG@Q} (requires sudo)"
+      exit 0
+      ;;
+    --setup)
+      # Setup log file with proper permissions
+      if ((EUID)); then
+        >&2 echo 'leet: error: --setup requires root privileges. Run with sudo.'
+        exit 1
+      fi
+      touch "$LEET_LOG"
+      chmod 664 "$LEET_LOG"
+      chown root:adm "$LEET_LOG"
+      echo "leet: Log file created ${LEET_LOG@Q} (664, root:adm)"
+      exit 0
+      ;;
+    -s|--steal)
+      SHLOCK+=(--steal)
+      ;;
+    -M|--maxtokens)
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+      ;;
+    *) break
+      ;;
+  esac
+  shift
+done
+
+SHLOCK+=(
+  "$lockname"-leet
+  --
+  claude.x
+  -T leet
+  --add-dir "$BCS_DIR" \
+  --append-system-prompt "Note: Full Bash Coding Standard (BCS) is located at '$BCS_PATH')."
+  "$@"
+)
+
+# Log invocation if log file is writable
+# Note: Run 'sudo leet --setup' to create and configure the log file
+if [[ -w "$LEET_LOG" ]]; then
+  echo "$(date +'%F %T') ${SUDO_USER:-"$USER"} $lockname $*" >>"$LEET_LOG"
+fi
+
+shlock "${SHLOCK[@]}"
 #fin
