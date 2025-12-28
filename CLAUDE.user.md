@@ -1,1 +1,0 @@
-/home/sysadmin/.claude/CLAUDE.md

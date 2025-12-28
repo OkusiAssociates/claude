@@ -1,0 +1,166 @@
+# Project-specific files
+BASH-CODING-STANDARD.md
+okusi/
+
+__pycache__
+.venv
+.mypy_cache
+.ruff_cache 
+# Temporary and backup files
+*~
+*.bak
+*.old
+*.tmp
+temp/
+tmp/
+.temp/
+.tmp/
+.cache/
+
+# Development and testing files
+t
+t[1-4]
+t*.htm*
+t*.py
+tt*
+ttt*
+curtest.sh
+refactor*.txt
+
+# Project-specific directories and files
+CLAUDE.md
+.dev/
+dev/
+.gudang/
+gudang/
+old/
+.old/
+.script/
+.symlink
+.symlink/
+
+# External/cloned repositories
+skills/repos/
+skills/skills/
+
+# Git-related (most of these are unnecessary in a .gitignore)
+# .git is automatically ignored by Git
+# .gitignore itself is typically version-controlled
+.gitcommit
+gitcommit
+
+# Python - Standard ignores
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff
+instance/
+.webassets-cache
+
+# Scrapy stuff
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE specific files
+.spyderproject
+.spyproject
+.ropeproject
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+pyrightconfig.json
+.ruff_cache/
+
+# Other Python tools
+__pypackages__/
+cython_debug/
+poetry.toml
+.pdm.toml
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py

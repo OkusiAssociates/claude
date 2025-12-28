@@ -1,0 +1,63 @@
+#!/bin/bash
+#shellcheck disable=SC2034,SC2155
+# Launch claude.x with draa agent
+set -euo pipefail
+shopt -s inherit_errexit extglob nullglob
+
+declare -- VERSION='1.0.0'
+
+declare -r DRAA_LOG=/var/log/draa.log
+
+declare -- lockname="${PWD//\//-}"; lockname=${lockname/-/}
+
+declare -a SHLOCK=()
+
+declare -ixr CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
+
+while(($#)); do
+  case $1 in
+    -h|--help)
+      echo 'Usage: draa [-n|--new] [-c|--continue] [-s|--steal] [-M|--maxtokens] [--setup] ...'
+      echo "  --setup    Setup log file at ${DRAA_LOG@Q} (requires sudo)"
+      exit 0
+      ;;
+    --setup)
+      # Setup log file with proper permissions
+      if ((EUID)); then
+        >&2 echo 'draa: error: --setup requires root privileges. Run with sudo.'
+        exit 1
+      fi
+      touch "$DRAA_LOG"
+      chmod 664 "$DRAA_LOG"
+      chown root:adm "$DRAA_LOG"
+      echo "draa: Log file created ${DRAA_LOG@Q} (664, root:adm)"
+      exit 0
+      ;;
+    -s|--steal)
+      SHLOCK+=(--steal)
+      ;;
+    -M|--maxtokens)
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+      ;;
+    *) break
+      ;;
+  esac
+  shift
+done
+
+SHLOCK+=(
+  "$lockname"-draa
+  --
+  claude.x
+  -T draa
+  "$@"
+)
+
+# Log invocation if log file is writable
+# Note: Run 'sudo draa --setup' to create and configure the log file
+if [[ -w "$DRAA_LOG" ]]; then
+  echo "$(date +'%F %T') ${SUDO_USER:-"$USER"} $lockname $*" >>"$DRAA_LOG"
+fi
+
+shlock "${SHLOCK[@]}"
+#fin

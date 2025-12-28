@@ -6,18 +6,25 @@ A comprehensive toolkit for extending and customizing Claude Code CLI with advan
 
 - [Overview](#overview)
 - [Features](#features)
+- [Enterprise Configuration](#enterprise-configuration)
+- [CLAUDE.md Hierarchy](#claudemd-hierarchy)
+- [Settings System](#settings-system)
+- [MCP Integration](#mcp-integration)
+- [Plugin Ecosystem](#plugin-ecosystem)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Core Scripts](#core-scripts)
   - [claude.x](#claudex)
   - [claude.init](#claudeinit)
   - [claude.update](#claudeupdate)
+  - [claude.cascade](#claudecascade)
 - [Agent System](#agent-system)
 - [SDK Examples](#sdk-examples)
 - [Skills System](#skills-system)
 - [Project Structure](#project-structure)
 - [Requirements](#requirements)
 - [Configuration](#configuration)
+- [Enterprise Standards](#enterprise-standards)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview
@@ -37,6 +44,265 @@ This repository provides a suite of wrapper scripts and utilities for Claude Cod
 ◉ **SDK Examples** - Python examples demonstrating Claude Agent SDK usage
 ◉ **Auto-initialization** - Streamlined project setup with canonical configurations
 ◉ **Skills Framework** - Comprehensive documentation for building Claude Code skills
+◉ **Enterprise Configuration** - Multi-server deployment with centralized policy management
+◉ **MCP Integration** - Custom knowledge base server with 14+ searchable domains
+
+---
+
+## Enterprise Configuration
+
+Claude Code supports organization-wide configuration through the enterprise directory at `/etc/claude-code/`. This enables centralized policy management across all users and servers.
+
+### Directory Structure
+
+```
+/etc/claude-code/
+├── CLAUDE.md                    # Enterprise policies (cannot be overridden)
+├── managed-mcp.json             # Enterprise MCP server configuration
+└── .claude/
+    ├── CLAUDE.md                # Index file for rules
+    ├── rules/                   # Modular enterprise rules
+    │   ├── bash-coding-standard.md
+    │   ├── coding-principles.md
+    │   ├── documentation.md
+    │   ├── environment.md
+    │   ├── git-commits.md
+    │   └── oknav.md
+    ├── commands/                # Shared command templates
+    │   ├── audit-bash.md
+    │   ├── audit-php.md
+    │   ├── audit-python.md
+    │   └── ...
+    └── agents/                  # Shared agent templates
+        ├── bash-expert.md
+        ├── code-reviewer.md
+        ├── documentation-writer.md
+        └── python-expert.md
+```
+
+### Multi-Server Deployment
+
+Sync enterprise configuration across Okusi servers using rsync:
+
+```bash
+# Sync to all servers
+sudo rsync -av --rsync-path="sudo rsync" /etc/claude-code/ okusi1:/etc/claude-code/
+sudo rsync -av --rsync-path="sudo rsync" /etc/claude-code/ okusi2:/etc/claude-code/
+sudo rsync -av --rsync-path="sudo rsync" /etc/claude-code/ okusi3:/etc/claude-code/
+```
+
+### Viewing Enterprise Policies
+
+```bash
+# View enterprise CLAUDE.md
+cat /etc/claude-code/CLAUDE.md
+
+# List enterprise rules
+ls /etc/claude-code/.claude/rules/
+```
+
+---
+
+## CLAUDE.md Hierarchy
+
+Claude Code implements a 5-level hierarchical memory system. Files are loaded in order from lowest to highest priority, with higher priority instructions overriding lower ones.
+
+### Load Order (Cascade)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│          CLAUDE.md SCOPE SUMMARY & PRECEDENCE                   │
+├──────────────┬──────────────────────────────┬──────────┬────────┤
+│ Scope        │ File Path                    │ Priority │ Shared │
+├──────────────┼──────────────────────────────┼──────────┼────────┤
+│ Enterprise   │ /etc/claude-code/CLAUDE.md   │ Highest  │ All    │
+│ Project Loc  │ ./CLAUDE.local.md            │ High     │ No     │
+│ Project Mem  │ ./CLAUDE.md                  │ Medium   │ Yes    │
+│ Project Rules│ ./.claude/rules/*.md         │ Medium   │ Yes    │
+│ User Rules   │ ~/.claude/rules/             │ Low      │ No     │
+│ User Mem     │ ~/.claude/CLAUDE.md          │ Lowest   │ No     │
+└──────────────┴──────────────────────────────┴──────────┴────────┘
+```
+
+### Scope Purposes
+
+| Scope | Location | Purpose |
+|-------|----------|---------|
+| **Enterprise** | `/etc/claude-code/CLAUDE.md` | Organization-wide policies (security, compliance) |
+| **User** | `~/.claude/CLAUDE.md` | Personal preferences across all projects |
+| **User Rules** | `~/.claude/rules/*.md` | Modular personal rules |
+| **Project** | `./CLAUDE.md` | Team-shared project instructions (via git) |
+| **Project Rules** | `./.claude/rules/*.md` | Topic-specific project rules |
+| **Project Local** | `./CLAUDE.local.md` | Personal project-specific prefs (gitignored) |
+
+### Viewing the Cascade
+
+Use `claude.cascade` to visualize the current hierarchy:
+
+```bash
+# View cascade for current directory
+claude.cascade
+
+# View cascade for specific directory
+claude.cascade /path/to/project
+```
+
+### Modular Rules System
+
+Rules in `.claude/rules/` directories are automatically discovered and loaded. Use YAML frontmatter for path-specific rules:
+
+```markdown
+---
+paths:
+  - "**/*.sh"
+  - "**/*.bash"
+---
+
+# Bash Coding Standard
+These rules apply only to shell script files.
+```
+
+---
+
+## Settings System
+
+Claude Code uses a hierarchical settings system separate from CLAUDE.md memory files.
+
+### Settings Locations
+
+| Scope | File | Purpose |
+|-------|------|---------|
+| **Enterprise** | `/etc/claude-code/managed-settings.json` | Organization-wide settings |
+| **User** | `~/.claude/settings.json` | Personal settings for all projects |
+| **User Local** | `~/.claude/settings.local.json` | Machine-specific overrides |
+| **Project** | `.claude/settings.json` | Project-shared settings |
+| **Project Local** | `.claude/settings.local.json` | Personal project settings (gitignored) |
+
+### Settings Structure
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash",
+      "WebSearch",
+      "Bash(ok0:*)",
+      "Bash(ok1:*)",
+      "Read(//etc/**)",
+      "WebFetch(domain:github.com)"
+    ],
+    "deny": []
+  },
+  "model": "opus",
+  "alwaysThinkingEnabled": true,
+  "enabledPlugins": {
+    "code-review@claude-code-plugins": true,
+    "commit-commands@claude-code-plugins": true
+  }
+}
+```
+
+### Permission Patterns
+
+- `Bash(command:*)` — Allow specific commands with any arguments
+- `Read(//path/**)` — Allow reading files under path
+- `WebFetch(domain:example.com)` — Allow fetching from specific domain
+
+---
+
+## MCP Integration
+
+Claude Code integrates with Model Context Protocol (MCP) servers for extended functionality.
+
+### Enterprise MCP Configuration
+
+Managed MCP servers are configured in `/etc/claude-code/managed-mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "customkb": {
+      "command": "uv",
+      "args": ["run", "--directory", "/ai/scripts/customkb", "customkb"]
+    }
+  }
+}
+```
+
+### Custom Knowledge Base Server (customkb)
+
+The customkb MCP server provides vector search across 14+ specialized knowledge bases:
+
+| Knowledge Base | Description |
+|----------------|-------------|
+| `appliedanthropology` | Human evolution, cultural development, secular dharma |
+| `jakartapost` | Jakarta Post archive (1994-2005) |
+| `okusiassociates` | Indonesian PMA company setup, corporate law |
+| `okusimail` | Business inquiry patterns and responses |
+| `okusiresearch` | Indonesian investment research |
+| `ollama` | Ollama configuration and AI systems |
+| `openai_docs` | OpenAI API documentation |
+| `peraturan` | Indonesian laws and regulations |
+| `prosocial` | Psychology-philosophy insights |
+| `seculardharma` | Secular dharma philosophy |
+| `smi` | SMI domain research |
+| `uv` | Full-stack programming, AI systems |
+| `wayang` | Indonesian wayang culture |
+
+### Using Knowledge Base Search
+
+```bash
+# Within Claude session
+mcp__customkb__search_okusiassociates "PMA company registration"
+mcp__customkb__search_peraturan "Indonesian investment law"
+mcp__customkb__list_knowledgebases
+```
+
+---
+
+## Plugin Ecosystem
+
+Claude Code supports plugins for extended functionality. Plugins are managed in `settings.json`.
+
+### Installed Plugins
+
+| Plugin | Source | Description |
+|--------|--------|-------------|
+| `agent-sdk-dev` | claude-code-plugins | Agent SDK development tools |
+| `code-review` | claude-code-plugins | Code review automation |
+| `commit-commands` | claude-code-plugins | Git commit helpers |
+| `document-skills` | anthropic-agent-skills | Document creation (PDF, DOCX, PPTX) |
+| `example-skills` | anthropic-agent-skills | Example skill implementations |
+| `explanatory-output-style` | claude-code-plugins | Educational output formatting |
+| `feature-dev` | claude-code-plugins | Feature development workflow |
+| `frontend-design` | claude-code-plugins | Frontend design assistance |
+| `hookify` | claude-code-plugins | Hook creation and management |
+| `learning-output-style` | claude-code-plugins | Interactive learning mode |
+| `plugin-dev` | claude-code-plugins | Plugin development tools |
+
+### Managing Plugins
+
+```json
+// In ~/.claude/settings.json
+{
+  "enabledPlugins": {
+    "code-review@claude-code-plugins": true,
+    "commit-commands@claude-code-plugins": true,
+    "hookify@claude-code-plugins": false
+  }
+}
+```
+
+### Plugin Locations
+
+- **Official plugins**: `~/.claude/plugins/`
+- **Plugin sources**: `claude-code-plugins`, `anthropic-agent-skills`
+
+---
 
 ## Installation
 
@@ -212,6 +478,63 @@ All arguments are passed directly to `sudo claude update`.
 **Example:**
 ```bash
 ./claude.update --check
+```
+
+---
+
+### claude.cascade
+
+Utility script to display the CLAUDE.md memory file cascade for any directory.
+
+**Location:** `/usr/local/bin/claude.cascade`
+**Purpose:** Visualize the hierarchical loading of CLAUDE.md files
+
+**Usage:**
+```bash
+claude.cascade [directory]
+```
+
+**Output:**
+```
+═══════════════════════════════════════════════════════════════════
+ CLAUDE.md Cascade — Load Order (lowest → highest priority)
+═══════════════════════════════════════════════════════════════════
+
+[1] Enterprise Policy
+    ✓ /etc/claude-code/CLAUDE.md                    (1435 bytes)
+
+[2] User Memory
+    ✓ /home/user/.claude/CLAUDE.md                  (498 bytes)
+
+[3] User Rules
+    ▸ /home/user/.claude/rules                      (6 files)
+      ✓ └─ bash-coding-standard.md                  (724 bytes)
+      ✓ └─ coding-principles.md                     (169 bytes)
+      ...
+
+[4] Project Hierarchy
+    ✓ /path/to/project/CLAUDE.md                    (2500 bytes)
+
+═══════════════════════════════════════════════════════════════════
+```
+
+**Features:**
+- Shows all discovered CLAUDE.md files in load order
+- Displays file sizes for each memory file
+- Lists contents of rules/ directories
+- Indicates missing files with ✗
+- Color-coded output for easy scanning
+
+**Examples:**
+```bash
+# View cascade for current directory
+claude.cascade
+
+# View cascade for specific project
+claude.cascade /ai/scripts/myproject
+
+# Useful for debugging which rules are active
+claude.cascade ~/work/client-project
 ```
 
 ---
@@ -794,6 +1117,76 @@ No action needed - `Agents.json` is included in the repository and tracked in ve
 
 ---
 
+## Enterprise Standards
+
+The Okusi Group enterprise configuration enforces organization-wide standards.
+
+### Git Authorship
+
+All commits must follow these rules:
+- Author: **Biksu Okusi**
+- Never mention "claude" or "claude code" in commit messages
+- Use conventional commit style when appropriate
+
+```bash
+# Correct
+git commit -m "feat: add user authentication module"
+
+# Incorrect
+git commit -m "Claude helped me add authentication"
+```
+
+### Documentation Icons
+
+Use these standardized icons in documentation:
+
+| Purpose | Icon | Usage |
+|---------|------|-------|
+| Info | ◉ | General information |
+| Debug | ⦿ | Debug output, technical details |
+| Warning | ▲ | Important warnings, cautions |
+| Success | ✓ | Successful operations, checkmarks |
+| Error | ✗ | Errors, failures, missing items |
+
+### Coding Principles
+
+- **K.I.S.S.** — Keep It Simple, Stupid
+- "The best process is no process"
+- "Everything should be made as simple as possible, but not any simpler"
+
+### Environment Requirements
+
+| Component | Version |
+|-----------|---------|
+| **OS** | Ubuntu 24.04+ |
+| **Bash** | 5.2+ |
+| **Python** | 3.12+ |
+| **Node.js** | 22.x LTS |
+
+### Multi-Server Navigation (oknav)
+
+Use oknav shortcuts for remote server access:
+
+```bash
+ok0 uptime               # Run command on ok0
+ok1 -r systemctl status  # Connect as root
+ok1 -d                   # Preserve current working directory
+oknav uptime             # Sequential on all servers
+oknav -p 'df -h'         # Parallel execution
+```
+
+| Alias | Server | Notes |
+|-------|--------|-------|
+| `ok0` | okusi0 | Primary |
+| `ok1` | okusi1 | — |
+| `ok2` | okusi2 | — |
+| `ok3` | okusi3 | — |
+| `okdev` | okusi | Dev (local-only) |
+
+▲ **Important**: Never use `ok_master` directly — always use hostname symlinks.
+
+---
+
 ## Troubleshooting
 
 ### Common Issues
@@ -885,7 +1278,7 @@ See [LICENSE](./LICENSE) file in the repository root.
 
 ---
 
-**Version:** 2.1.0
-**Last Updated:** 2025-12-24
+**Version:** 2.2.0
+**Last Updated:** 2025-12-27
 
 #fin
