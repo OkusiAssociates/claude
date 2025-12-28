@@ -4,7 +4,7 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='1.0.8'
+declare -r VERSION='1.0.9'
 declare -r SCRIPT_PATH=$(realpath -e -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
 
@@ -58,7 +58,7 @@ has_conversation() {
   # Returns 0 (success) if conversation exists, 1 otherwise
 
   local -- project_dir="${PWD//\//-}"  # Replace / with -
-  local -- project_path=/usr/share/claude/.claude/projects/"$project_dir"
+  local -- project_path="$HOME"/.claude/projects/"$project_dir"
 
   # Check if directory exists and contains .jsonl files
   [[ -d "$project_path" ]] && compgen -G "$project_path"/*.jsonl >/dev/null 2>&1
