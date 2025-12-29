@@ -396,6 +396,14 @@ claude.x [OPTIONS] [PROMPT]
 - `-h, --help` - Show help message
 - `-V, --version` - Show version information
 
+**System Prompt Options:**
+- `--system-prompt TEXT` - Replace default prompt (CLAUDE.md ignored)
+- `--system-prompt-file FILE` - Replace default prompt from file
+- `--append-system-prompt TEXT` - Append to default prompt (CLAUDE.md loaded)
+- `--append-system-prompt-file FILE` - Append to default prompt from file
+
+▲ **Note:** `--system-prompt` replaces the entire default system prompt and CLAUDE.md files are NOT loaded. Use `--append-system-prompt` to add instructions while preserving defaults.
+
 **Default Directories:**
 The script automatically adds these directories to Claude's context:
 - `$HOME`

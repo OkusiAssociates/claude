@@ -108,10 +108,10 @@ PASS-THROUGH CLAUDE OPTIONS
     --print                     One-shot query mode (auto-enabled with PROMPT)
     --output-format FORMAT      Set output format
     --input-format FORMAT       Set input format
-    --system-prompt TEXT        Set system prompt (replaces default)
-    --system-prompt-file FILE   Read system prompt from file
-    --append-system-prompt TEXT Append to system prompt
-    --append-system-prompt-file FILE  Append system prompt from file
+    --system-prompt TEXT        Replace default prompt (CLAUDE.md ignored)
+    --system-prompt-file FILE   Replace default prompt from file
+    --append-system-prompt TEXT Append to default prompt (CLAUDE.md loaded)
+    --append-system-prompt-file FILE  Append to default prompt from file
     --add-dir PATH              Add directory to working context
     --continue, -c              Resume previous conversation (default)
     --resume, -r                Resume from specific point
