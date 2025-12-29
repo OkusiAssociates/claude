@@ -4,7 +4,7 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='1.0.9'
+declare -r VERSION='1.1.0'
 declare -r SCRIPT_PATH=$(realpath -e -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
 
@@ -108,7 +108,10 @@ PASS-THROUGH CLAUDE OPTIONS
     --print                     One-shot query mode (auto-enabled with PROMPT)
     --output-format FORMAT      Set output format
     --input-format FORMAT       Set input format
-    --append-system-prompt TEXT Add custom system prompt
+    --system-prompt TEXT        Set system prompt (replaces default)
+    --system-prompt-file FILE   Read system prompt from file
+    --append-system-prompt TEXT Append to system prompt
+    --append-system-prompt-file FILE  Append system prompt from file
     --add-dir PATH              Add directory to working context
     --continue, -c              Resume previous conversation (default)
     --resume, -r                Resume from specific point
@@ -186,6 +189,7 @@ main() {
 
   # Parse arguments
   local -i query_flag=0 continue_flag=-1  # -1=auto-detect, 0=no, 1=yes
+  local -- systemPrompt=''
   local -a allowedTools=() appendSystemPrompt=() addDir=( "${addDirDefaultDirs[@]}" )
   local -a claude_cmd=(
     --allowedTools Read Write Edit Bash
@@ -262,9 +266,29 @@ main() {
         ;;
 
       --append-system-prompt)
-        (($#>1)) || die 22 "Invalid option argument for ${1@Q}"
+        (($#>1)) || die 22 "Option ${1@Q} requires an argument"
         shift
         appendSystemPrompt+=("$1")
+        ;;
+
+      --system-prompt)
+        (($#>1)) || die 22 "Option ${1@Q} requires an argument"
+        shift
+        systemPrompt=$1
+        ;;
+
+      --system-prompt-file)
+        (($#>1)) || die 22 "Option ${1@Q} requires an argument"
+        shift
+        [[ -f $1 ]] || die 1 "File not found: ${1@Q}"
+        systemPrompt=$(<"$1")
+        ;;
+
+      --append-system-prompt-file)
+        (($#>1)) || die 22 "Option ${1@Q} requires an argument"
+        shift
+        [[ -f $1 ]] || die 1 "File not found: ${1@Q}"
+        appendSystemPrompt+=("$(<"$1")")
         ;;
 
       -v|--verbose)  VERBOSE+=1 ;;
@@ -308,6 +332,9 @@ main() {
 
   ((${#allowedTools[@]})) \
       && claude_cmd+=(--allowedTools "${allowedTools[@]}")
+
+  [[ -n "$systemPrompt" ]] \
+      && claude_cmd+=(--system-prompt "$systemPrompt")
 
   ((${#appendSystemPrompt[@]})) \
       && claude_cmd+=(--append-system-prompt "${appendSystemPrompt[@]}")
