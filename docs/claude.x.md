@@ -5,8 +5,8 @@
 `claude.x` is the primary wrapper script for Claude Code CLI that provides enhanced functionality including 'dangerous' permissions, agent template loading, and multi-directory context support.
 
 **File:** `/ai/scripts/claude/claude.x`
-**Version:** 1.0.4
-**Lines:** 227
+**Version:** 1.1.0
+**Lines:** 356
 
 ## Purpose
 

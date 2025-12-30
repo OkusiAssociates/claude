@@ -371,7 +371,7 @@ dv2-agents list
 
 Main wrapper script for Claude Code with enhanced permissions and agent support.
 
-**Version:** 1.0.8
+**Version:** 1.1.0
 **Purpose:** Run Claude with 'dangerous' settings and optional Agent system prompts
 
 **Usage:**
@@ -921,7 +921,7 @@ The `skills/` directory contains comprehensive documentation for building Claude
 ├── README.md                          # This file
 ├── LICENSE                            # License file
 │
-├── claude.x                           # Main wrapper script (v1.0.8)
+├── claude.x                           # Main wrapper script (v1.1.0)
 ├── claude.init                        # Project initialization (v1.0.3)
 ├── claude.update                      # Update wrapper (v1.0.0)
 ├── claude-install.md                  # Installation guide
@@ -1286,7 +1286,7 @@ See [LICENSE](./LICENSE) file in the repository root.
 
 ---
 
-**Version:** 2.2.0
-**Last Updated:** 2025-12-27
+**Version:** 2.3.0
+**Last Updated:** 2025-12-30
 
 #fin
