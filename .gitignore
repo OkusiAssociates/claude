@@ -1,5 +1,8 @@
 # Project-specific files
+CLAUDE.md
+.claude/
 BASH-CODING-STANDARD.md
+AUDIT-*.md
 okusi/
 
 __pycache__
@@ -48,6 +51,7 @@ skills/skills/
 # .gitignore itself is typically version-controlled
 .gitcommit
 gitcommit
+.git*
 
 # Python - Standard ignores
 # Byte-compiled / optimized files
@@ -66,8 +70,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/

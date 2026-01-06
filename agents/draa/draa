@@ -4,16 +4,17 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -- VERSION=1.1.0
+declare -r VERSION=1.1.1
+declare -r SCRIPT_NAME=${0##*/}  # No realpath()
 
-declare -r DRAA_LOG=/var/log/draa.log
+declare -r LOGFILE=/var/log/agents/"$SCRIPT_NAME".log
 
-declare -- lockname="${PWD//\//-}"
+declare -- lockname=${PWD//\//-}
 lockname=${lockname/-/}
 
 declare -a SHLOCK=()
 
-declare -ixr CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
+declare -ix CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
 
 declare -x VECTORDBS=${VECTORDBS:-/var/lib/vectordbs}
 
@@ -49,29 +50,54 @@ trim() {
   return 0
 }
 
+show_help(){
+  cat <<HELP
+$SCRIPT_NAME $VERSION - Applied Anthropology agent for claude code
+
+Applied Anthropology expert with vectordb context injection.
+
+Usage: $SCRIPT_NAME [-n|--new] [-c|--continue] [-s|--steal] [-M|--maxtokens] [...]
+       $SCRIPT_NAME --setup
+       $SCRIPT_NAME --show-log
+
+  --setup      Setup log file at ${LOGFILE@Q} (requires sudo)
+  --show-log   Display the log file
+
+  [...]        All other arguments and options are sent to claude.x
+HELP
+}
 
 while(($#)); do
   case $1 in
+    -V|--version)
+      echo "$SCRIPT_NAME $VERSION"
+      claude.x --version
+      exit 0
+      ;;
     -h|--help)
-      echo 'Usage: draa [-n|--new] [-c|--continue] [-s|--steal] [-M|--maxtokens] [--setup] ...'
-      echo "  --setup    Setup log file at ${DRAA_LOG@Q} (requires sudo)"
+      show_help
       exit 0
       ;;
     -S|--setup)
-      # Setup log file with proper permissions
+      # Setup log directory and file with proper permissions
       if ((EUID)); then
-        >&2 echo 'draa: error: --setup requires root privileges. Run with sudo.'
+        >&2 echo "$SCRIPT_NAME: error: --setup requires root privileges. Run with sudo."
         exit 1
       fi
-      touch "$DRAA_LOG"
-      chmod 664 "$DRAA_LOG"
-      chown root:adm "$DRAA_LOG"
-      echo "draa: Log file created ${DRAA_LOG@Q} (664, root:adm)"
+      [[ -d /var/log/agents ]] || mkdir -p /var/log/agents
+      chmod 755 /var/log/agents
+      chown root:adm /var/log/agents
+      touch "$LOGFILE"
+      chmod 666 "$LOGFILE"
+      chown root:adm "$LOGFILE"
+      echo "$SCRIPT_NAME: Log directory /var/log/agents (755, root:adm)"
+      echo "$SCRIPT_NAME: Log file created ${LOGFILE@Q} (666, root:adm)"
       exit 0
       ;;
-    -l|--log)
-      cat "$DRAA_LOG"
-      exit
+
+    -L|--show-log)
+      cat "$LOGFILE"
+      exit 0
       ;;
     -s|--steal)
       SHLOCK+=(--steal)
@@ -111,18 +137,18 @@ $query_role
 "
 
 SHLOCK+=(
-  "$lockname"-draa
+  "$lockname"-"$SCRIPT_NAME"
   --
   claude.x
-  -T draa
+  -T "$SCRIPT_NAME"
   --system-prompt "$SYSTEM_PROMPT"
   "$@"
 )
 
 # Log invocation if log file is writable
 # Note: Run 'sudo draa --setup' to create and configure the log file
-if [[ -w "$DRAA_LOG" ]]; then
-  echo "$(date +'%F %T') ${SUDO_USER:-"$USER"} $lockname $*" >>"$DRAA_LOG"
+if [[ -w "$LOGFILE" ]]; then
+  echo "$(date +'%F %T') ${SUDO_USER:-"$USER"} $lockname $*" >>"$LOGFILE"
 fi
 
 shlock "${SHLOCK[@]}"

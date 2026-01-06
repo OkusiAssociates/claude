@@ -1,0 +1,338 @@
+#!/bin/bash
+# Claude Code Machine Setup Script
+# Sets up Claude Code enterprise configuration for multi-user access
+#
+# Usage: sudo ./claude.setup-machine [OPTIONS]
+#
+# Options:
+#   -h, --help          Show this help message
+#   -V, --version       Show version
+#   -i, --skip-install  Skip npm installation (assume already installed)
+#   -p, --skip-plugins  Skip plugin marketplace setup
+#   -m, --skip-mcp      Skip MCP configuration
+#   -C, --clobber       Overwrite existing config files
+#
+set -euo pipefail
+shopt -s inherit_errexit extglob nullglob
+
+declare -r VERSION=1.3.0
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
+declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
+
+# Configuration
+declare -r ENTERPRISE_DIR=/etc/claude-code
+declare -r ENTERPRISE_CLAUDE_DIR="$ENTERPRISE_DIR"/.claude
+declare -r CLAUDE_GROUP=claude-users
+
+declare -- CLAUDE_GID
+CLAUDE_GID=$(getent group claude-users 2>/dev/null | cut -d: -f3)
+[[ -n $CLAUDE_GID ]] || CLAUDE_GID=1337
+readonly -- CLAUDE_GID
+
+# Colors
+if [[ -t 2 ]]; then
+  declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[1;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
+fi
+
+info()   { echo -e "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
+status() { echo -e "$SCRIPT_NAME: ${GREEN}✓${NC} $*"; }
+warn()   { >&2 echo -e "$SCRIPT_NAME: ${YELLOW}▲${NC} $*"; }
+error()  { >&2 echo -e "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
+die()    { error "$2"; exit "$1"; }
+
+show_help() {
+  cat <<EOF
+$SCRIPT_NAME $VERSION - Claude Code Enterprise Setup
+
+DESCRIPTION
+    Sets up Claude Code enterprise configuration for multi-user access.
+
+    This script:
+    - Installs Claude Code globally via npm (optional)
+    - Creates the claude-users group (GID $CLAUDE_GID)
+    - Sets up enterprise config at $ENTERPRISE_DIR
+    - Copies enterprise templates (.claude/, CLAUDE.md, rules)
+    - Clones plugin marketplaces from GitHub
+    - Creates managed-mcp.json for MCP servers
+    - Verifies MCP server dependencies (uv, customkb)
+
+USAGE
+    sudo $SCRIPT_NAME [OPTIONS]
+
+OPTIONS
+    -h, --help          Show this help message
+    -V, --version       Show version
+    -i, --skip-install  Skip npm installation
+    -p, --skip-plugins  Skip plugin marketplace setup
+    -m, --skip-mcp      Skip MCP configuration
+    -C, --clobber       Overwrite existing config files
+
+DIRECTORIES CREATED
+    Enterprise config:  $ENTERPRISE_DIR
+    Enterprise .claude: $ENTERPRISE_CLAUDE_DIR
+
+USER CONFIGURATION
+    Each user gets their own ~/.claude/ directory (created automatically
+    when they first run 'claude'). Use claude.add-user to add users to
+    the claude-users group.
+
+REQUIRES
+    - Root privileges
+    - npm and Node.js 18+
+
+EOF
+}
+
+main() {
+  local -i skip_install=0 skip_plugins=0 skip_mcp=0 clobber=0
+
+  # Parse arguments
+  while (($#)); do
+    case $1 in
+      -h|--help)          show_help; return 0 ;;
+      -V|--version)       echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -i|--skip-install)  skip_install=1 ;;
+      -p|--skip-plugins)  skip_plugins=1 ;;
+      -m|--skip-mcp)      skip_mcp=1 ;;
+      -C|--clobber)       clobber=1 ;;
+      -[hvipmC]*) #shellcheck disable=SC2046
+                          set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
+      -*)                 die 22 "Invalid option ${1@Q} (use --help)" ;;
+      *)                  die 2  "Unexpected argument ${1@Q}" ;;
+    esac
+    shift
+  done
+
+  # Check root
+  ((EUID == 0)) || die 1 'This script must be run as root (use sudo)'
+
+  echo '=== Claude Code Enterprise Setup ==='
+  echo "Enterprise directory: $ENTERPRISE_DIR"
+  echo "Enterprise .claude:   $ENTERPRISE_CLAUDE_DIR"
+  echo '====================================='
+  echo
+
+  # Step 1: Install Claude Code globally
+  if ((skip_install)); then
+    warn 'Skipping Claude Code installation (--skip-install)'
+  else
+    info 'Installing Claude Code globally...'
+    if command -v claude &>/dev/null; then
+      local -- current_version
+      current_version=$(claude --version 2>&1 | head -1 || echo "unknown")
+      warn "Claude Code already installed: $current_version"
+      info 'Running update...'
+      npm update -g @anthropic-ai/claude-code || warn 'Update failed, continuing...'
+    else
+      npm install -g @anthropic-ai/claude-code
+    fi
+    status "Claude Code installed: $(claude --version 2>&1 | head -1)"
+  fi
+
+  # Step 2: Create group
+  info "Creating group ${CLAUDE_GROUP@Q} (GID $CLAUDE_GID)..."
+  if getent group "$CLAUDE_GROUP" &>/dev/null; then
+    warn "Group ${CLAUDE_GROUP@Q} already exists"
+  else
+    groupadd --gid "$CLAUDE_GID" "$CLAUDE_GROUP"
+    status "Created group ${CLAUDE_GROUP@Q}"
+  fi
+
+  # Step 3: Create enterprise directory structure
+  info 'Creating enterprise directory structure...'
+  mkdir -p "$ENTERPRISE_DIR"
+  mkdir -p "$ENTERPRISE_CLAUDE_DIR"/{agents,commands,rules,plugins}
+  chown -R root:"$CLAUDE_GROUP" "$ENTERPRISE_DIR"
+  chmod 2775 "$ENTERPRISE_DIR"
+  find "$ENTERPRISE_CLAUDE_DIR" -type d -exec chmod 2775 {} \;
+  status 'Enterprise directories created'
+
+  # Step 4: Copy enterprise .claude/ template
+  local -- enterprise_template="$SCRIPT_DIR"/.claude.template-enterprize
+  if [[ -d $enterprise_template ]]; then
+    info 'Copying enterprise .claude/ template...'
+    # Copy agents, commands, rules from template
+    for subdir in agents commands rules; do
+      if [[ -d "$enterprise_template/$subdir" ]]; then
+        if [[ ! -d "$ENTERPRISE_CLAUDE_DIR/$subdir" ]] || ((clobber)); then
+          cp -r "$enterprise_template/$subdir/"* "$ENTERPRISE_CLAUDE_DIR/$subdir/" 2>/dev/null || true
+          status "Copied $subdir/"
+        else
+          warn "$subdir/ already exists (use --clobber to overwrite)"
+        fi
+      fi
+    done
+
+    # Copy .claude/CLAUDE.md (index file)
+    if [[ -f "$enterprise_template/CLAUDE.md" ]]; then
+      if [[ ! -f "$ENTERPRISE_CLAUDE_DIR/CLAUDE.md" ]] || ((clobber)); then
+        cp "$enterprise_template/CLAUDE.md" "$ENTERPRISE_CLAUDE_DIR/CLAUDE.md"
+        status 'Copied .claude/CLAUDE.md'
+      fi
+    fi
+  else
+    warn "Enterprise template not found: $enterprise_template"
+  fi
+
+  # Step 5: Create enterprise CLAUDE.md (main policy file)
+  if [[ ! -f "$ENTERPRISE_DIR"/CLAUDE.md ]] || ((clobber)); then
+    ((clobber)) && [[ -f "$ENTERPRISE_DIR"/CLAUDE.md ]] && warn 'Overwriting CLAUDE.md'
+    info 'Creating enterprise CLAUDE.md...'
+    local -- template="$SCRIPT_DIR"/CLAUDE.md.enterprise.template
+    if [[ -f $template ]]; then
+      cp "$template" "$ENTERPRISE_DIR"/CLAUDE.md
+      status "Copied from template: $template"
+    else
+      warn "Template not found: $template (using minimal default)"
+      cat > "$ENTERPRISE_DIR"/CLAUDE.md <<'EOF'
+# Enterprise Claude Code Policy
+
+Organization-wide instructions for all Claude Code users.
+Edit this file to add enterprise policies.
+
+Enterprise rules are in `.claude/rules/`.
+
+#fin
+EOF
+      status 'Created minimal CLAUDE.md'
+    fi
+    chmod 664 "$ENTERPRISE_DIR"/CLAUDE.md
+  else
+    warn "$ENTERPRISE_DIR/CLAUDE.md already exists"
+  fi
+
+  # Step 6: Setup plugin marketplaces
+  if ((skip_plugins)); then
+    warn 'Skipping plugin marketplace setup (--skip-plugins)'
+  else
+    local -- plugins_dir="$ENTERPRISE_CLAUDE_DIR"/plugins/marketplaces
+    mkdir -p "$plugins_dir"
+
+    info 'Setting up plugin marketplaces...'
+
+    # Clone marketplaces if not present
+    local -a marketplaces=(
+      "claude-code-plugins:https://github.com/anthropics/claude-code.git"
+      "anthropic-agent-skills:https://github.com/anthropics/skills.git"
+      "claude-plugins-official:https://github.com/anthropics/claude-plugins-official.git"
+    )
+
+    local -- name url
+    for entry in "${marketplaces[@]}"; do
+      name=${entry%%:*}
+      url=${entry#*:}
+      if [[ -d "$plugins_dir/$name" ]]; then
+        warn "Marketplace $name already exists"
+      else
+        info "Cloning $name..."
+        git clone --depth 1 "$url" "$plugins_dir/$name" 2>&1 | tail -1 || warn "Failed to clone $name"
+      fi
+    done
+
+    # Create known_marketplaces.json
+    info 'Creating known_marketplaces.json...'
+    cat > "$ENTERPRISE_CLAUDE_DIR"/plugins/known_marketplaces.json <<EOF
+{
+  "claude-code-plugins": {
+    "source": {"source": "github", "repo": "anthropics/claude-code"},
+    "installLocation": "$plugins_dir/claude-code-plugins",
+    "lastUpdated": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  },
+  "anthropic-agent-skills": {
+    "source": {"source": "github", "repo": "anthropics/skills"},
+    "installLocation": "$plugins_dir/anthropic-agent-skills",
+    "lastUpdated": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  },
+  "claude-plugins-official": {
+    "source": {"source": "github", "repo": "anthropics/claude-plugins-official"},
+    "installLocation": "$plugins_dir/claude-plugins-official",
+    "lastUpdated": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  }
+}
+EOF
+
+    # Fix marketplace permissions
+    chown -R root:"$CLAUDE_GROUP" "$plugins_dir"
+    find "$plugins_dir" -type d -exec chmod 2775 {} \;
+    find "$plugins_dir" -type f -exec chmod 664 {} \;
+    chmod 664 "$ENTERPRISE_CLAUDE_DIR"/plugins/known_marketplaces.json
+
+    #shellcheck disable=SC2012
+    status "Marketplaces configured: $(ls "$plugins_dir" 2>/dev/null | tr '\n' ' ')"
+  fi
+
+  # Step 7: Setup MCP configuration
+  if ((skip_mcp)); then
+    warn 'Skipping MCP configuration (--skip-mcp)'
+  else
+    info 'Setting up MCP configuration...'
+
+    if [[ ! -f "$ENTERPRISE_DIR"/managed-mcp.json ]] || ((clobber)); then
+      ((clobber)) && [[ -f "$ENTERPRISE_DIR"/managed-mcp.json ]] && warn 'Overwriting managed-mcp.json'
+      info 'Creating managed-mcp.json...'
+      local -- mcp_template="$SCRIPT_DIR"/managed-mcp.json.template
+      if [[ -f $mcp_template ]]; then
+        cp "$mcp_template" "$ENTERPRISE_DIR"/managed-mcp.json
+        status "Copied from template: $mcp_template"
+      else
+        warn "Template not found: $mcp_template (using empty default)"
+        echo '{ "mcpServers": {} }' > "$ENTERPRISE_DIR"/managed-mcp.json
+        status 'Created empty managed-mcp.json'
+      fi
+      chmod 664 "$ENTERPRISE_DIR"/managed-mcp.json
+    else
+      warn "$ENTERPRISE_DIR/managed-mcp.json already exists"
+    fi
+
+    # Verify MCP server dependencies
+    info 'Verifying MCP server dependencies...'
+    if command -v uv &>/dev/null; then
+      status "uv found: $(uv --version 2>&1 | head -1)"
+    else
+      warn 'uv not found - customkb MCP server will not work'
+      warn 'Install with: curl -LsSf https://astral.sh/uv/install.sh | sh'
+    fi
+
+    if [[ -d /ai/scripts/customkb ]]; then
+      status 'customkb directory found: /ai/scripts/customkb'
+    else
+      warn 'customkb directory not found - MCP server may not work'
+    fi
+  fi
+
+  # Step 8: Fix permissions on enterprise directory
+  info 'Fixing permissions on enterprise directory...'
+  chown -R root:"$CLAUDE_GROUP" "$ENTERPRISE_DIR"
+  find "$ENTERPRISE_DIR" -type d -exec chmod 2775 {} \;
+  find "$ENTERPRISE_DIR" -type f -exec chmod 664 {} \;
+  status 'Permissions configured with setgid'
+
+  # Summary
+  echo
+  echo '=== Enterprise Setup Complete ==='
+  echo
+  echo 'Enterprise structure:'
+  ls -la "$ENTERPRISE_DIR"/
+  echo
+  echo '.claude/ contents:'
+  ls -la "$ENTERPRISE_CLAUDE_DIR"/
+  echo
+  echo 'Next steps:'
+  echo "  1. Add users with: $SCRIPT_DIR/claude.add-user USERNAME"
+  echo '  2. User authenticates: claude'
+  echo '  3. (Optional) Copy OAuth: sudo cp ~/.claude.json /home/USER/.claude.json'
+  echo "  4. Edit MCP servers: sudo nano $ENTERPRISE_DIR/managed-mcp.json"
+  echo
+  echo 'User configuration:'
+  echo '  Each user gets their own ~/.claude/ directory when they first run claude.'
+  echo '  Enterprise policies from /etc/claude-code/ are automatically loaded.'
+  echo
+}
+
+main "$@"
+
+#fin

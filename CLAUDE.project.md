@@ -21,7 +21,7 @@
   - Prefer `[[` over `[` for conditionals
   - Prefer `((...)) && ...` or `[[...]] && ...` for simple conditionals over `if...then`
   - Use integer values where appropriate, and always declare with `-i`
-  - Always use `((var+=1))` instead of `((var++))` - the post-increment returns the original value which can cause non-zero exit codes with `set -e`
+  - Always use `var+=1`; never `((var++))`, `((var+=1))`, or `((++var))` - the post-increment returns the original value which can cause non-zero exit codes with `set -e`
   - Always end scripts with line '#fin' to indicate end of script, with a blank linefeed at the end
   - If it is necessary to refer to BASH-CODING-STANDARD.md, always use the form [BASH-CODING-STANDARD](https://github.com/Open-Technology-Foundation/bash-coding-standard)
 
@@ -52,15 +52,15 @@
   - Use MySQL or Sqlite3 database for data storage, as appropriate
 
 ## Developer Tech Stack
-- Ubuntu 24.04.3
-- Bash 5.2.21
-- Python 3.12.3
-- Apache2 2.4.58
-- PHP 8.3.6
-- MySQL 8.0.43
-- sqlite3 3.45.1
-- Bootstrap 5.3
-- FontAwesome
+  - Ubuntu 24.04.3
+  - Bash 5.2.21
+  - Python 3.12.3
+  - Apache2 2.4.58
+  - PHP 8.3.6
+  - MySQL 8.0.44
+  - SQLite3 3.45.1
+  - Bootstrap 5.3
+  - FontAwesome
 
 ## Hardware
 - Development Machine (hostname 'okusi'):
@@ -78,4 +78,3 @@
 - checkpoint backups are located in ~/.checkpoint/{codebase_dir}/{YYYYMMDD_hhmmss}/
 - .gudang directories should normally be ignored.
 
-#fin

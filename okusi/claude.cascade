@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+#───────────────────────────────────────────────────────────────────────────────
+# claude-cascade - Display the CLAUDE.md memory file cascade
+#───────────────────────────────────────────────────────────────────────────────
+# Shows all CLAUDE.md files in load order (enterprise → user → project)
+# Usage: claude-cascade [directory]
+#───────────────────────────────────────────────────────────────────────────────
+
+set -euo pipefail
+
+# Colors
+readonly GREEN=$'\e[32m'
+readonly RED=$'\e[31m'
+readonly CYAN=$'\e[36m'
+readonly DIM=$'\e[2m'
+readonly RESET=$'\e[0m'
+
+# Icons (from documentation standards)
+readonly CHECK="✓"
+readonly CROSS="✗"
+
+show_file() {
+    local path="$1"
+    local label="$2"
+    local expanded
+    expanded=$(eval echo "$path")
+
+    if [[ -e "$expanded" ]]; then
+        local size
+        size=$(stat -c%s "$expanded" 2>/dev/null || echo "?")
+        printf "%s${GREEN}${CHECK}${RESET} %-45s ${DIM}(%s bytes)${RESET}\n" "$label" "$expanded" "$size"
+    else
+        printf "%s${RED}${CROSS}${RESET} ${DIM}%-45s (not found)${RESET}\n" "$label" "$expanded"
+    fi
+}
+
+show_rules_dir() {
+    local dir="$1"
+    local label="$2"
+    local expanded
+    expanded=$(eval echo "$dir")
+
+    if [[ -d "$expanded" ]]; then
+        local count
+        count=$(find "$expanded" -name "*.md" -type f 2>/dev/null | wc -l)
+        printf "%s${CYAN}▸${RESET} %-45s ${DIM}(%d files)${RESET}\n" "$label" "$expanded" "$count"
+        # List individual rule files
+        while IFS= read -r -d '' rule; do
+            local rsize
+            rsize=$(stat -c%s "$rule" 2>/dev/null || echo "?")
+            printf "%s  ${GREEN}${CHECK}${RESET} ${DIM}└─${RESET} %-41s ${DIM}(%s bytes)${RESET}\n" "$label" "${rule##*/}" "$rsize"
+        done < <(find "$expanded" -name "*.md" -type f -print0 2>/dev/null | sort -z)
+    else
+        printf "%s${RED}${CROSS}${RESET} ${DIM}%-45s (not found)${RESET}\n" "$label" "$expanded"
+    fi
+}
+
+walk_up_tree() {
+    local cwd="$1"
+    local dir="$cwd"
+    local found=()
+
+    # Walk up from cwd to root, collecting CLAUDE.md files
+    while [[ "$dir" != "/" ]]; do
+        [[ -f "$dir/CLAUDE.md" ]] && found+=("$dir/CLAUDE.md")
+        [[ -f "$dir/.claude/CLAUDE.md" ]] && found+=("$dir/.claude/CLAUDE.md")
+        [[ -f "$dir/CLAUDE.local.md" ]] && found+=("$dir/CLAUDE.local.md")
+        dir=$(dirname "$dir")
+    done
+
+    # Print in reverse (root to cwd) for load order
+    for ((i=${#found[@]}-1; i>=0; i--)); do
+        echo "${found[i]}"
+    done
+}
+
+main() {
+    local target_dir="${1:-.}"
+    target_dir=$(cd "$target_dir" && pwd)
+
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo " CLAUDE.md Cascade — Load Order (lowest → highest priority)"
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo ""
+
+    # 1. Enterprise
+    echo "${CYAN}[1] Enterprise Policy${RESET}"
+    show_file "/etc/claude-code/CLAUDE.md" "    "
+    echo ""
+
+    # 2. User Memory
+    echo "${CYAN}[2] User Memory${RESET}"
+    show_file "~/.claude/CLAUDE.md" "    "
+    echo ""
+
+    # 3. User Rules
+    echo "${CYAN}[3] User Rules${RESET}"
+    show_rules_dir "~/.claude/rules" "    "
+    echo ""
+
+    # 4. Project hierarchy (walk up tree)
+    echo "${CYAN}[4] Project Hierarchy${RESET} ${DIM}(from $target_dir)${RESET}"
+
+    # Project rules in cwd
+    if [[ -d "$target_dir/.claude/rules" ]]; then
+        show_rules_dir "$target_dir/.claude/rules" "    "
+    fi
+
+    # Walk up and show project files
+    local tree_files
+    tree_files=$(walk_up_tree "$target_dir")
+    if [[ -n "$tree_files" ]]; then
+        while IFS= read -r f; do
+            local fsize
+            fsize=$(stat -c%s "$f" 2>/dev/null || echo "?")
+            printf "    ${GREEN}${CHECK}${RESET} %-45s ${DIM}(%s bytes)${RESET}\n" "$f" "$fsize"
+        done <<< "$tree_files"
+    else
+        printf "    ${DIM}(no project CLAUDE.md files found in tree)${RESET}\n"
+    fi
+    echo ""
+
+    echo "═══════════════════════════════════════════════════════════════════"
+    echo " ${DIM}Higher priority files override lower priority instructions${RESET}"
+    echo "═══════════════════════════════════════════════════════════════════"
+}
+
+main "$@"

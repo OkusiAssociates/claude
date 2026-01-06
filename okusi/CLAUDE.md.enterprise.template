@@ -1,0 +1,138 @@
+# Okusi Group — Enterprise Claude Code Policy
+
+Organization-wide instructions for all Claude Code users.
+These policies CANNOT be overridden by user or project settings.
+
+---
+
+## Security
+
+- NEVER commit credentials, API keys, or secrets to version control
+- NEVER expose internal IP addresses or hostnames in public repositories
+- NEVER bypass security prompts without explicit user approval
+- NEVER execute destructive commands without confirmation
+
+---
+
+## Git Authorship
+
+- Commits must be authored as **'Biksu Okusi'** (biksu@okusi.id)
+- NEVER mention "claude" or "claude code" in commit messages
+- Use conventional commit style when appropriate
+
+---
+
+## Coding Standards
+
+- All Bash scripts must follow **BCS** (Bash Coding Standard)
+- Reference: `/ai/scripts/Okusi/bash-coding-standard/data/`
+
+---
+
+## Environment Compliance
+
+- **OS**: Ubuntu 24.04+
+- **Bash**: 5.2+
+- **Python**: 3.12+
+- **Node.js**: 22.x LTS
+
+---
+
+## Server Navigation
+
+Use `ok_master` symlinks to navigate between Okusi servers. Each symlink resolves via `hosts.conf`.
+
+### Available Servers
+
+| Alias | Host | Access | Notes |
+|-------|------|--------|-------|
+| `ok0` | okusi0 | `ok0` | Primary server |
+| `ok1` | okusi1 | `ok1` | Production |
+| `ok2` | okusi2 | `sudo ok2` | Production (requires sudo) |
+| `ok3` | okusi3 | `ok3` | Production |
+| `okdev` | okusi | `okdev` | Development (local) |
+| `ok0-batam` | okusi0-batam | `sudo ok0-batam` | Branch office (requires sudo) |
+
+### Single-Server Commands (ok_master)
+
+```bash
+ok1 uptime                # Run command on ok1
+ok1                       # Interactive shell on ok1
+ok1 -r systemctl status   # Connect as root
+ok1 -d                    # Preserve current working directory
+ok1 -rd                   # Root shell, same directory
+sudo ok2 yatti-api status # ok2 requires sudo
+```
+
+### Multi-Server Commands (oknav)
+
+```bash
+oknav uptime              # Sequential on all oknav-enabled servers
+oknav -p 'df -h'          # Parallel execution
+oknav -x ok0 uptime       # Exclude ok0 from this run
+oknav list                # List installed host symlinks
+```
+
+▲ **Important**: Do NOT use `ok_master` directly—always use the hostname symlink (`ok1`, `ok2`, etc.).
+
+## Deployment
+
+Production servers (ok1, ok2, ok3) do **not** use git. Deploy using `push-to-okusi`:
+
+```bash
+# Dry run (default) - preview changes
+push-to-okusi 1 2 3
+
+# Actual sync to all production servers
+push-to-okusi -N 1 2 3
+
+# Sync with .venv directory included
+push-to-okusi -NV 1
+
+# Sync and delete extraneous files on destination
+push-to-okusi -Nd 2
+```
+
+### push-to-okusi Options
+
+| Option | Description |
+|--------|-------------|
+| `-n, --dry-run` | Trial run, no changes (default) |
+| `-N, --not-dry-run` | Execute actual sync |
+| `-d, --delete` | Delete extraneous files from destination |
+| `-x, --exclude PATH` | Add additional exclude pattern |
+| `-V, --venv` | Include .venv directory in sync |
+
+### Server Numbers
+
+| Number | Server | Notes |
+|--------|--------|-------|
+| 0 | ok0 | Primary |
+| 1 | ok1 | Production |
+| 2 | ok2 | Production (may require `sudo ok2`) |
+| 3 | ok3 | Production |
+
+▲ **Note**: Only runs from dev machine (hostname `okusi`). Uses rsync to sync current directory.
+
+---
+## Documentation Icons
+
+| Purpose | Icon |
+|---------|------|
+| Info    | ◉    |
+| Debug   | ⦿    |
+| Warning | ▲    |
+| Success | ✓    |
+| Error   | ✗    |
+
+---
+
+Enterprise rules are in `.claude/rules/`:
+- `coding-principles.md`
+- `documentation.md`
+- `bash-coding-standard.md`
+- `git-commits.md`
+- `oknav.md`
+- `environment.md`
+
+#fin

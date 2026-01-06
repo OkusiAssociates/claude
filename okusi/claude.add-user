@@ -1,0 +1,196 @@
+#!/bin/bash
+# Add a user to Claude Code setup
+#
+# Usage: sudo ./claude.add-user USERNAME [OPTIONS]
+#
+set -euo pipefail
+shopt -s inherit_errexit extglob nullglob
+
+declare -r VERSION='1.2.0'
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
+declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
+
+# Configuration
+declare -r CLAUDE_GROUP=claude-users
+declare -r USER_TEMPLATE="$SCRIPT_DIR"/.claude.template-user
+
+# Colors
+if [[ -t 2 ]]; then
+  declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[1;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
+fi
+
+info()   { echo -e "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
+status() { echo -e "$SCRIPT_NAME: ${GREEN}✓${NC} $*"; }
+warn()   { >&2 echo -e "$SCRIPT_NAME: ${YELLOW}▲${NC} $*"; }
+error()  { >&2 echo -e "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
+die()    { error "$2"; exit "$1"; }
+
+show_help() {
+  cat <<EOF
+$SCRIPT_NAME $VERSION - Add user to Claude Code setup
+
+USAGE
+    sudo $SCRIPT_NAME USERNAME [OPTIONS]
+
+OPTIONS
+    -h, --help              Show this help message
+    -V, --version           Show version
+    --copy-oauth PATH       Copy OAuth from specified .claude.json file
+    --init-config           Initialize ~/.claude/ from user template
+
+DESCRIPTION
+    Adds a user to the Claude Code setup:
+    1. Adds user to $CLAUDE_GROUP group
+    2. Optionally copies OAuth file for shared authentication
+    3. Optionally initializes ~/.claude/ from template
+
+    User's ~/.claude/ is created automatically when they first run 'claude'.
+    Use --init-config to pre-initialize with the user template.
+
+EXAMPLES
+    # Add user (they'll authenticate themselves)
+    sudo $SCRIPT_NAME gary
+
+    # Add user with shared OAuth (inherits existing session)
+    sudo $SCRIPT_NAME gary --copy-oauth /home/sysadmin/.claude.json
+
+    # Add user with pre-initialized config
+    sudo $SCRIPT_NAME gary --init-config
+
+EOF
+}
+
+main() {
+  local -- username=''
+  local -- oauth_source=''
+  local -i init_config=0
+
+  # Parse arguments
+  while (($#)); do
+    case $1 in
+      -h|--help)      show_help; return 0 ;;
+      -V|--version)   echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      --copy-oauth)   (($#>1)) || die 22 "Option ${1@Q} requires a path"
+                      shift
+                      oauth_source=$1
+                      ;;
+      --init-config)  init_config=1 ;;
+      -*)             die 22 "Unknown option ${1@Q}" ;;
+      *)
+        [[ -z $username ]] || die 22 'Multiple usernames specified'
+        username=$1
+        ;;
+    esac
+    shift
+  done
+
+  # Validate
+  [[ -n $username ]] || die 22 "Usage: $SCRIPT_NAME USERNAME [--copy-oauth PATH] [--init-config]"
+  ((EUID == 0)) || die 1 'This script must be run as root (use sudo)'
+
+  # Check user exists
+  id "$username" &>/dev/null || die 1 "User ${username@Q} does not exist"
+
+  # Get home directory and primary group
+  local -- user_home user_group
+  user_home=$(getent passwd "$username" | cut -d: -f6)
+  user_group=$(id -gn "$username")
+  [[ -n $user_home ]] || die 1 "Could not determine home directory for ${username@Q}"
+  [[ -d $user_home ]] || die 1 "Home directory ${user_home@Q} does not exist"
+
+  echo "=== Adding user ${username@Q} to Claude Code setup ==="
+  echo "Home: $user_home"
+  echo "Group: $user_group"
+  echo
+
+  # Step 1: Add to group
+  info "Adding ${username@Q} to group ${CLAUDE_GROUP@Q}..."
+  if groups "$username" | grep -qw "$CLAUDE_GROUP"; then
+    warn "User already in group ${CLAUDE_GROUP@Q}"
+  else
+    usermod -a -G "$CLAUDE_GROUP" "$username"
+    status "Added to group ${CLAUDE_GROUP@Q}"
+  fi
+
+  # Step 2: Initialize ~/.claude/ from template (optional)
+  local -- target="$user_home/.claude"
+  if ((init_config)); then
+    info "Initializing $target from template..."
+
+    # Check for symlink first (-L catches broken symlinks, -e does not)
+    if [[ -L $target ]]; then
+      warn "Removing legacy symlink: $target"
+      rm "$target"
+    elif [[ -e $target ]]; then
+      warn "$target already exists (skipping template copy)"
+      init_config=0
+    fi
+
+    if ((init_config)); then
+      if [[ -d $USER_TEMPLATE ]]; then
+        mkdir -p "$target"
+        # Copy template contents
+        cp -r "$USER_TEMPLATE"/* "$target"/ 2>/dev/null || true
+        chown -R "$username":"$user_group" "$target"
+        chmod 755 "$target"
+        find "$target" -type d -exec chmod 755 {} \;
+        find "$target" -type f -exec chmod 644 {} \;
+        status "Initialized $target from template"
+      else
+        warn "User template not found: $USER_TEMPLATE"
+        info 'User can run claude to auto-initialize ~/.claude/'
+      fi
+    fi
+  else
+    # Check for legacy symlink and warn
+    if [[ -L $target ]]; then
+      warn "Legacy symlink found: $target"
+      warn "Consider removing it: rm $target"
+      warn "User will get their own ~/.claude/ when they run claude"
+    elif [[ -d $target ]]; then
+      info "User already has $target"
+    else
+      info 'User will get ~/.claude/ when they first run claude'
+    fi
+  fi
+
+  # Step 3: Handle OAuth
+  local -- oauth_target="$user_home"/.claude.json
+  if [[ -n $oauth_source ]]; then
+    info "Copying OAuth from ${oauth_source@Q}..."
+    if [[ ! -f $oauth_source ]]; then
+      error "OAuth source file not found: $oauth_source"
+    else
+      cp "$oauth_source" "$oauth_target"
+      chown "$username":"$user_group" "$oauth_target"
+      chmod 600 "$oauth_target"
+      status "OAuth copied to ${oauth_target@Q}"
+    fi
+  else
+    if [[ -f $oauth_target ]]; then
+      warn "Existing ${oauth_target@Q} found (user may already be authenticated)"
+    else
+      info 'No OAuth file. User must run claude to authenticate.'
+    fi
+  fi
+
+  # Summary
+  echo
+  echo "=== User ${username@Q} configured ==="
+  echo
+  ls -la "$user_home"/.claude* 2>/dev/null || echo '(no .claude files yet)'
+  echo
+  echo 'Note: User must log out and back in for group membership to take effect.'
+  echo
+  if [[ -z $oauth_source && ! -f $oauth_target ]]; then
+    echo "Next: User runs 'claude' to authenticate via browser."
+  fi
+}
+
+main "$@"
+
+#fin

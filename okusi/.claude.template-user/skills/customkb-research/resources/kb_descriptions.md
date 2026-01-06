@@ -1,0 +1,1 @@
+/var/lib/vectordbs/kb_descriptions.md

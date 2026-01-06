@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "customkb": {
+      "command": "uv",
+      "args": ["run", "--directory", "/ai/scripts/customkb", "python", "-m", "mcp_server.server"],
+      "env": {}
+    }
+  }
+}

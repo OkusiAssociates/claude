@@ -2,6 +2,6 @@
 # Update Claude CLI
 set -euo pipefail
 
-sudo claude update "$@"
+claude update "$@"
 
 #fin

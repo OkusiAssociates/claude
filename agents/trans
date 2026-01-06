@@ -1,9 +1,0 @@
-#!/bin/bash
-#shellcheck disable=SC2034,SC2155
-# Launch claude.x with the trans(late) agent
-set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
-
-shlock -- claude.x -T TRANS "$@" 
-
-#fin

@@ -4,17 +4,17 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='1.1.0'
+declare -r VERSION=1.2.0
 declare -r SCRIPT_PATH=$(realpath -e -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
 
-declare -- AGENTS_JSON="$SCRIPT_DIR"/agents/Agents.json
+declare -- AGENTS_JSON=${AGENTS_JSON:-"$SCRIPT_DIR"/agents/Agents.json}
 if [[ ! -f "$AGENTS_JSON" ]]; then
   declare -a locfiles=()
   declare -- locfile
-  readarray -t locfiles < <(locate -b '\Agents.json' | grep -v checkpoint | grep 'Agents.json$')
+  readarray -t locfiles < <(locate -b '\Agents.json' | grep -v 'checkpoint\|backup' | grep 'Agents.json$')
   for locfile in "${locfiles[@]}"; do
-    [[ -L $locfile ]] && continue
+    [[ -L $locfile ]] && continue ||:
     [[ -f $locfile ]] || continue
     AGENTS_JSON="$locfile"
     break
@@ -30,34 +30,15 @@ else
 fi
 info() { ((VERBOSE)) || return 0; >&2 echo "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
 error() { >&2 echo "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
-die() { (($#>1)) && error "${@:2}"; exit "${1:0}"; }
+die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 
 s() { (( ${1:-1} == 1 )) || echo -n 's'; }
-#shellcheck disable=SC2120
-trim() {
-  if (($#)); then
-    local -- v
-    [[ $1 == '-e' ]] && { shift; v="$(echo -en "$*")"; } || v="$*"
-    v="${v#"${v%%[![:blank:]]*}"}"
-    echo -n "${v%"${v##*[![:blank:]]}"}"
-    return 0
-  fi
-  if [[ ! -t 0 ]]; then
-    local -- REPLY
-    while IFS= read -r REPLY || [[ -n "$REPLY" ]]; do
-      REPLY="${REPLY#"${REPLY%%[![:blank:]]*}"}"
-      REPLY="${REPLY%"${REPLY##*[![:blank:]]}"}"
-      echo "$REPLY"
-    done
-  fi
-  return 0
-}
 
 has_conversation() {
   # Check if a conversation exists for the current directory
   # Returns 0 (success) if conversation exists, 1 otherwise
 
-  local -- project_dir="${PWD//\//-}"  # Replace / with -
+  local -- project_dir=${PWD//\//-}  # Replace / with -
   local -- project_path="$HOME"/.claude/projects/"$project_dir"
 
   # Check if directory exists and contains .jsonl files
@@ -152,7 +133,7 @@ EXAMPLES
 AVAILABLE AGENTS
 $(readarray -t Agents < <(
     #shellcheck disable=SC2120
-    jq -r 'keys[]' "$AGENTS_JSON" | cut -d' ' -f1 | trim
+    jq -r 'keys[]' "$AGENTS_JSON" | cut -d' ' -f1
     )
 echo "${Agents[*]}" | fold -s -w 72 |sed 's/^/    /g')
 
@@ -197,9 +178,18 @@ main() {
   )
   ((EUID==0)) || claude_cmd+=(--dangerously-skip-permissions)
 
-
   while (($#)); do
     case $1 in
+      -V|--version)
+        echo "$SCRIPT_NAME $VERSION"
+        "$(command -v claude)" --version
+        return 0
+        ;;
+      -h|--help)
+        show_help
+        return 0
+        ;;
+
       -c|--continue)
         continue_flag=1
         ;;
@@ -207,15 +197,6 @@ main() {
         continue_flag=0
         ;;
 
-      -h|--help)
-        show_help
-        return 0
-        ;;
-      -V|--version)
-        echo "$SCRIPT_NAME $VERSION"
-        "$(command -v claude)" --version
-        return 0
-        ;;
       -T)
         (($# > 1)) || die 22 "Option ${1@Q} requires an argument"
         shift
@@ -249,8 +230,8 @@ main() {
         shift
         while (($#)) && [[ "${1:0:1}" != '-' ]]; do
           allowedTools+=("$1")
-          (($#==1)) && break
-          (($#>1)) && [[ ${2:0:1} == '-' ]] && break || :
+          (($#==1)) && break ||:
+          (($#>1)) && [[ ${2:0:1} == '-' ]] && break ||:
           shift
         done
         ;;
@@ -259,8 +240,8 @@ main() {
         shift
         while (($#)) && [[ "${1:0:1}" != '-' ]]; do
           addDir+=("$1")
-          (($#==1)) && break
-          (($#>1)) && [[ ${2:0:1} == '-' ]] && break || :
+          (($#==1)) && break ||:
+          (($#>1)) && [[ ${2:0:1} == '-' ]] && break ||:
           shift
         done
         ;;
@@ -295,14 +276,13 @@ main() {
       -q|--quiet)    VERBOSE=0 ;;
       --)
         shift
-        (($#)) && claude_cmd+=("$@")
+        (($#)) && claude_cmd+=("$@") ||:
         break
         ;;
-      -[!-]?*)
-        # Disaggregate combined short options: -vq becomes -v -q
-        set -- "${1:0:2}" "-${1:2}" "${@:2}"
-        continue
-        ;;
+
+      -[VhcnT]*) #shellcheck disable=SC2046
+        set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
+
       -*)
         claude_cmd+=("$1")
         ;;
@@ -311,7 +291,7 @@ main() {
         claude_cmd+=("$1")
         ;;
     esac
-    shift || :
+    shift || break
   done
 
   # Handle conversation continuation

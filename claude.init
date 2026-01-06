@@ -2,54 +2,165 @@
 #shellcheck disable=SC2015
 # Create canonical CLAUDE.md in current directory
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit extglob nullglob
 
-VERSION='1.0.3'
-SCRIPT_PATH=$(realpath -- "$0")
-SCRIPT_NAME=${SCRIPT_PATH##*/}
-SCRIPT_DIR=${SCRIPT_PATH%/*}
-readonly -- VERSION SCRIPT_PATH SCRIPT_NAME SCRIPT_DIR
+declare -r VERSION=1.0.5
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -- "$0")
+declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
+
+declare -- PROJECT_DIR="${PROJECT_DIR:-}"
+
+declare -- CLAUDE_ETC_MD=/etc/claude-code/CLAUDE.md
+declare -- CLAUDE_ENT_MD=${CLAUDE_ENT_MD:-"$SCRIPT_DIR"/CLAUDE.enterprise.md}
+declare -- CLAUDE_PROJECT_MD=${CLAUDE_PROJECT_MD:-"$SCRIPT_DIR"/CLAUDE.project.md}
+
+declare -- BCS_TIER_FILE=${BCS_TIER_FILE:-/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md}
+
+declare -- CLAUDE_X_AGENT=${CLAUDE_X_AGENT:-leet}
+
+declare -- CLAUDE_UPDATE=${CLAUDE_UPDATE:-0}
+
+version() { echo "$SCRIPT_NAME $VERSION"; }
+
+show_help() {
+  local -- project_dir=${PROJECT_DIR:-"$PWD"}
+  cat <<HELP
+$(version) - Standard Project Repo Initialization
+
+Creates canonical claude project directory, adds/updates files:
+
+  $CLAUDE_ETC_MD
+  $project_dir/CLAUDE.md
+  $project_dir/BASH-CODING-STANDARD.md
+  $project_dir/.gitignore
+
+Usage: $SCRIPT_NAME [-u|--claude-update] [project_dir]
+
+If omitted, project_dir defaults to current directory.
+
+Configurable Envvars showing current defaults:
+
+  PROJECT_DIR=$project_dir
+  CLAUDE_ETC_MD=$CLAUDE_ETC_MD
+  CLAUDE_PROJECT_MD=$CLAUDE_PROJECT_MD
+  BCS_TIER_FILE=$BCS_TIER_FILE
+  CLAUDE_UPDATE=$CLAUDE_UPDATE
+  CLAUDE_X_AGENT=$CLAUDE_X_AGENT
+
+Available Agents:
+
+$(find "$SCRIPT_DIR"/agents/ -maxdepth 1 -type d -exec basename {} \; |grep -v agents |sort |xargs -n1 echo  '   ')
+
+HELP
+}
+
+die() { (($# < 2)) || >&2 echo "$SCRIPT_NAME ${*:2}"; exit "${1:-0}"; }
 
 # --------------------------------------------------------------------------------
 main() {
-  # Handle help/version flags
-  if [[ ${1:-} == '-h' || ${1:-} == '--help' || ${1:-} == '--version' ]]; then
-    echo "$SCRIPT_NAME $VERSION - Create canonical CLAUDE.md in current directory"
-    exit 0
-  fi
+  local -- REPLY
+  while (($#)); do
+    case $1 in
+#      -v|--verbose)  VERBOSE+=1 ;;
+#      -q|--quiet)    VERBOSE=0 ;;
+      -u|--claude-update)
+                     CLAUDE_UPDATE=1 ;;
+      -V|--version)  version; return 0 ;;
+      -h|--help)     show_help; return 0 ;;
+      -[uvVh]*) #shellcheck disable=SC2046
+                     set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
+      -*)            die 22 "Invalid option ${1@Q} Help: $SCRIPT_NAME -h";;
+      *)             [[ -z $PROJECT_DIR ]] || die 2 "Too many arguments ${1@Q} Help: $SCRIPT_NAME -h"
+                     PROJECT_DIR=$1
+       ;;
+    esac
+    shift
+  done
+  [[ -n "$PROJECT_DIR" ]] || PROJECT_DIR=$PWD
 
   # Update claude
-  sudo claude update
+  if ((CLAUDE_UPDATE)); then
+    claude update || die $?
+  fi
 
-  # Create .gudang directory
-  mkdir -p .gudang
+  local -i REINIT=0
+
+  # Get into/create the project directory
+  if [[ ! -d "$PROJECT_DIR" ]]; then
+    echo "${PROJECT_DIR@Q} does not exist."
+    read -n1 -p 'Create? y/n '
+    [[ $REPLY == 'y' ]] || die 1
+    echo
+    REINIT=1
+    mkdir -p "$PROJECT_DIR" || die 1
+  fi
+  cd "$PROJECT_DIR" || die 1
 
   # Bash coding standard
-  if [[ ! -f BASH-CODING-STANDARD.md ]]; then
-    [[ -L BASH-CODING-STANDARD.md ]] ||  ln -fs /ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md BASH-CODING-STANDARD.md
-    echo BASH-CODING-STANDARD.md >>.gitignore
+  if [[ ! -f "$PROJECT_DIR"/BASH-CODING-STANDARD.md ]]; then
+    if [[ ! -L "$PROJECT_DIR"/BASH-CODING-STANDARD.md ]]; then
+      ln -fs "$BCS_TIER_FILE" "$PROJECT_DIR"/BASH-CODING-STANDARD.md
+      REINIT=1
+    fi
   fi
+
+  # Init enterprise CLAUDE to /etc/claude-code/
+  if [[ ! -f $CLAUDE_ETC_MD ]]; then
+    sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
+    REINIT=1
+  fi
+  if ! sudo diff -q "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD" >/dev/null 2>&1; then
+    echo -e "\nWARNING: ${CLAUDE_ETC_MD@Q} differs from template ${CLAUDE_ENT_MD@Q}\n"
+    read -r -n 1 -p "Update ${CLAUDE_ETC_MD@Q}? y/n "
+    if [[ ${REPLY,,} == y ]]; then
+      sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
+      REINIT=1
+    fi
+    echo
+  fi
+  sudo chown root:sysadmin "$CLAUDE_ETC_MD"
+  sudo chmod 664 "$CLAUDE_ETC_MD"
   
-  # Check if CLAUDE.md exists
-  if [[ -f ./CLAUDE.md ]]; then
-    >&2 echo "CLAUDE.md already exists in $PWD."
-    >&2 read -r -n 1 -p 'Append canonical info? y/n '
-    [[ ${REPLY,,} == y ]] && cat -s "$SCRIPT_DIR"/CLAUDE.canonical.md >> ./CLAUDE.md ||:
+  # Check if project CLAUDE.md exists
+  if [[ -f "$PROJECT_DIR"/CLAUDE.md ]]; then
+    echo "CLAUDE.md already exists in ${PROJECT_DIR@Q}."
+    read -r -n 1 -p 'Append canonical info? y/n '
+    if [[ ${REPLY,,} == y ]]; then
+      { echo
+        echo '---'
+        cat -s "$CLAUDE_PROJECT_MD"
+      } >> "$PROJECT_DIR"/CLAUDE.md
+      REINIT=1
+    fi
   else
-    >&2 read -r -n 1 -p "Init claude in $PWD? y/n "
-    [[ ${REPLY,,} == y ]] && cp -p "$SCRIPT_DIR"/CLAUDE.canonical.md ./CLAUDE.md ||:
+    read -r -n 1 -p "Init claude in ${PROJECT_DIR@Q}? y/n "
+    if [[ ${REPLY,,} == y ]]; then
+      cp -p "$CLAUDE_PROJECT_MD" "$PROJECT_DIR"/CLAUDE.md
+    fi
   fi
   echo
   
-  echo CLAUDE.md >>.gitignore
-  echo .gudang >>.gitignore
-  remblanks <.gitignore |sort -u >.gitignore2
-  mv .gitignore2 .gitignore
-  
-  # Execute claude
-  declare -a args=()
-  [[ -d .claude ]] && args=(--new) || args=(--continue)
-  exec claude.x -T leet "${args[@]}"
+  # Process .gitignore
+  [[ -f "$PROJECT_DIR"/.gitignore ]] \
+      || cat -s "$SCRIPT_DIR"/.gitignore > "$PROJECT_DIR"/.gitignore
+  #shellcheck disable=SC2094
+  local -- ignore
+  for ignore in CLAUDE.md .claude 'AUDIT-\*.md' .gudang BASH-CODING-STANDARD.md; do
+    if ! grep -q -m1 ^"$ignore"$ "$PROJECT_DIR"/.gitignore; then
+      echo -e "\n# Ignore from claude.init: ${ignore@Q}" >>"$PROJECT_DIR"/.gitignore
+      echo "$ignore" >>"$PROJECT_DIR"/.gitignore
+      REINIT=1
+    fi
+  done
+  unset ignore
+
+
+  echo "Project directory ${PROJECT_DIR@Q} has been $( ((REINIT==0)) || echo 're-' )initialized"
+
+  declare -a args=("$CLAUDE_X_AGENT" --model opus '[--continue][--new] [...]')
+  echo "Ready to execute agent: ${args[*]}"
 }
 
 main "$@"
