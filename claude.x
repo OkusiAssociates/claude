@@ -32,6 +32,7 @@ info() { ((VERBOSE)) || return 0; >&2 echo "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
 error() { >&2 echo "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
 die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 
+# Pluralization helper: returns 's' unless count is 1
 s() { (( ${1:-1} == 1 )) || echo -n 's'; }
 
 has_conversation() {
@@ -65,6 +66,7 @@ OPTIONS
                         Case-insensitive matching supported
 
     -n, --new           Start fresh conversation (don't continue previous)
+    -c, --continue      Force continue previous conversation
     --no-continue       Alias for --new
 
     -v, --verbose       Increase verbosity (repeatable: -vv, -vvv)
@@ -141,16 +143,21 @@ echo "${Agents[*]}" | fold -s -w 72 |sed 's/^/    /g')
 
 NOTES
     Agents.json Location:
-      Current: $AGENTS_JSON
-      Source:  /ai/scripts/dejavu2-cli/Agents/Agents.json
+      Bundled: $SCRIPT_DIR/agents/Agents.json
+      Override: AGENTS_JSON=/path/to/custom/Agents.json
 
-    For developers with dejavu2-cli:
-      - Agents.json auto-syncs when using './.gitcommit'
-      - Manual sync: agents/sync-agents-json
+    The bundled Agents.json is included in the repository.
+    Use the AGENTS_JSON environment variable to override.
 
-    For end users:
-      - Agents.json is bundled in the repository
-      - No external dependencies required
+ENVIRONMENT
+    AGENTS_JSON         Override path to Agents.json
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS
+                        Max output tokens (default: 32000)
+
+EXIT CODES
+    0   Success
+    1   Agent not found, Agents.json not found, or missing systemprompt
+    22  Invalid option argument (EINVAL)
 EOT
 }
 
@@ -328,7 +335,7 @@ main() {
   ((VERBOSE)) \
       && info "$(declare -p claude_cmd | tr '[' $'\n')" || :
 
-  echo -ne "\033]0;◯ Leet .../$(basename -- "$PWD")\007"
+  echo -ne "\033]0;◯ ${agent_tag:-claude.x} .../$(basename -- "$PWD")\007"
   exec "$(command -v claude)" "${claude_cmd[@]}"
 }
 

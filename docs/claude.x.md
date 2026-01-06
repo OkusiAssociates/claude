@@ -5,7 +5,7 @@
 `claude.x` is the primary wrapper script for Claude Code CLI that provides enhanced functionality including 'dangerous' permissions, agent template loading, and multi-directory context support.
 
 **File:** `/ai/scripts/claude/claude.x`
-**Version:** 1.1.0
+**Version:** 1.2.0
 **Lines:** 356
 
 ## Purpose
@@ -246,9 +246,9 @@ dv2-agents list
 ```bash
 #!/bin/bash
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit extglob nullglob
 
-VERSION='1.0.4'
+VERSION='1.2.0'
 SCRIPT_PATH=$(realpath -- "$0")
 SCRIPT_DIR=${SCRIPT_PATH%/*}
 SCRIPT_NAME=${SCRIPT_PATH##*/}
@@ -503,7 +503,7 @@ The script is designed to prevent command injection:
 **Current Status:** 70% compliant
 
 **Issues:**
-- ▲ Missing `shopt -s inherit_errexit shift_verbose extglob nullglob` (line 5)
+- ▲ Missing `shopt -s inherit_errexit extglob nullglob` (line 5)
 - ▲ Uses `readlink -en` instead of `realpath --` (line 8)
 - ▲ Unquoted array additions in some locations
 - ◉ Unused variables (SCRIPT_DIR, GREEN, YELLOW)

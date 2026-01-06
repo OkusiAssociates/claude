@@ -371,7 +371,7 @@ dv2-agents list
 
 Main wrapper script for Claude Code with enhanced permissions and agent support.
 
-**Version:** 1.1.0
+**Version:** 1.2.0
 **Purpose:** Run Claude with 'dangerous' settings and optional Agent system prompts
 
 **Usage:**
@@ -385,7 +385,11 @@ claude.x [OPTIONS] [PROMPT]
 - Dangerously skip permissions (auto-accept all operations)
 - Agent template loading from Agents.json
 - Multiple working directories support
-- Smart conversation continuation (auto-detects existing conversations)
+- Smart conversation continuation:
+  - Auto-detects existing conversations for current directory
+  - If conversation exists: automatically continues
+  - If no conversation exists: starts fresh
+  - Override with `-n/--new` (always fresh) or `-c/--continue` (force continue)
 
 **Options:**
 - `-T AGENT` - Load agent template (e.g., leet, trans, sarki, draa)
@@ -429,6 +433,19 @@ The script automatically adds these directories to Claude's context:
 # Fresh conversation with verbose output
 ./claude.x --new -vv -T leet
 ```
+
+**Exit Codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Agent not found, Agents.json not found, or missing systemprompt |
+| 22 | Invalid option argument (EINVAL) |
+
+**Environment Variables:**
+
+- `AGENTS_JSON` - Override path to Agents.json
+- `CLAUDE_CODE_MAX_OUTPUT_TOKENS` - Max output tokens (default: 32000, agent wrappers may set 64000 with -M)
 
 **See also:** [docs/claude.x.md](./docs/claude.x.md)
 
@@ -605,7 +622,7 @@ Elite full-stack programmer and AI systems engineer specialized in:
 - Frontend: HTML5, CSS3, Bootstrap 5.3, FontAwesome
 - Coding principles: Efficient solutions, robust code
 
-**Version:** 1.0.4
+**Version:** 1.0.5
 
 **Special Features:**
 - Automatically adds BCS directory to context (`/ai/scripts/Okusi/bash-coding-standard`)
@@ -619,7 +636,7 @@ Elite full-stack programmer and AI systems engineer specialized in:
 - `-n, --new` - Start fresh conversation
 - `-c, --continue` - Resume previous conversation
 - `-s, --steal` - Steal lock from another session
-- `-M, --maxtokens` - Set max output tokens to 64000
+- `-M, --maxtokens` - Set max output tokens to 64000 (default: 32000)
 - `--setup` - Setup log file (requires sudo)
 
 ```bash
@@ -717,7 +734,7 @@ agents/sarki "Tolong bantu saya"
 
 Applied Anthropology specialist (DrAA agent) providing insights into secular interpretations of human evolution, cultural development, and dharmic philosophy.
 
-**Version:** 1.0.0
+**Version:** 1.1.1
 
 **Expertise:**
 - Evolutionary biology and human behavioral biology
@@ -735,7 +752,7 @@ Applied Anthropology specialist (DrAA agent) providing insights into secular int
 - `-n, --new` - Start fresh conversation
 - `-c, --continue` - Resume previous conversation
 - `-s, --steal` - Steal lock from another session
-- `-M, --maxtokens` - Set max output tokens to 64000
+- `-M, --maxtokens` - Set max output tokens to 64000 (default: 32000)
 - `--setup` - Setup log file (requires sudo)
 
 ```bash
@@ -753,6 +770,10 @@ sudo agents/draa --setup
 ```
 
 **Usage:** `agents/draa [OPTIONS] [PROMPT]`
+
+---
+
+**Session Locking (leet, draa):** Uses `shlock` to prevent concurrent sessions per directory. Only one agent session can run at a time per directory. Use `--steal` to take over an existing session.
 
 ---
 
@@ -921,7 +942,7 @@ The `skills/` directory contains comprehensive documentation for building Claude
 ├── README.md                          # This file
 ├── LICENSE                            # License file
 │
-├── claude.x                           # Main wrapper script (v1.1.0)
+├── claude.x                           # Main wrapper script (v1.2.0)
 ├── claude.init                        # Project initialization (v1.0.3)
 ├── claude.update                      # Update wrapper (v1.0.0)
 ├── claude-install.md                  # Installation guide
@@ -1070,7 +1091,7 @@ All bash scripts in this repository follow BCS requirements:
 
 - Shebang: `#!/bin/bash`
 - Error handling: `set -euo pipefail`
-- Shell options: `shopt -s inherit_errexit shift_verbose extglob nullglob`
+- Shell options: `shopt -s inherit_errexit extglob nullglob`
 - Script metadata: VERSION, SCRIPT_PATH, SCRIPT_DIR, SCRIPT_NAME
 - End marker: `#fin`
 
@@ -1286,7 +1307,7 @@ See [LICENSE](./LICENSE) file in the repository root.
 
 ---
 
-**Version:** 2.3.0
-**Last Updated:** 2025-12-30
+**Version:** 2.4.0
+**Last Updated:** 2026-01-06
 
 #fin
