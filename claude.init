@@ -90,7 +90,7 @@ main() {
   # Get into/create the project directory
   if [[ ! -d "$PROJECT_DIR" ]]; then
     echo "${PROJECT_DIR@Q} does not exist."
-    read -n1 -p 'Create? y/n '
+    read -r -n1 -p "Create ${PROJECT_DIR@Q}? y/n "
     [[ $REPLY == 'y' ]] || die 1
     echo
     REINIT=1

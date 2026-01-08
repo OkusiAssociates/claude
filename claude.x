@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #shellcheck disable=SC2015,SC2155
 # Wrapper for claude code with 'dangerous' permissions and optional Agent system prompts
 set -euo pipefail

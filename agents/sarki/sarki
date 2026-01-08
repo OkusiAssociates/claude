@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #shellcheck disable=SC2034,SC2155
 # Launch claude.x with sarki agent
 set -euo pipefail
@@ -72,6 +72,10 @@ while(($#)); do
 
     -M|--maxtokens)
       CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+      ;;
+
+    -[VhSLsM]*) #shellcheck disable=SC2046
+      set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}"
       ;;
 
     *) break

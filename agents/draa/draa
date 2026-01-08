@@ -14,35 +14,28 @@ lockname=${lockname/-/}
 
 declare -a SHLOCK=()
 
-declare -ix CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
+declare -ix CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
 
 declare -x VECTORDBS=${VECTORDBS:-/var/lib/vectordbs}
 
 trim() {
-  # Process arguments if provided
   if (($#)); then
     local -- v
     if [[ $1 == '-e' ]]; then
-      # Process escape sequences when -e flag is used
       shift
       v=$(echo -en "$*")
     else
       v="$*"
     fi
-    # Remove leading whitespace first
     v="${v#"${v%%[![:blank:]]*}"}"
-    # Then remove trailing whitespace
     echo -n "${v%"${v##*[![:blank:]]}"}"
     return 0
   fi
-
   # Process stdin if available
   if [[ ! -t 0 ]]; then
     local -- REPLY
     while IFS= read -r REPLY || [[ -n "$REPLY" ]]; do
-      # Remove leading whitespace
       REPLY="${REPLY#"${REPLY%%[![:blank:]]*}"}"
-      # Remove trailing whitespace
       REPLY="${REPLY%"${REPLY##*[![:blank:]]}"}"
       echo "$REPLY"
     done
@@ -105,6 +98,11 @@ while(($#)); do
     -M|--maxtokens)
       CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
       ;;
+
+    -[VhSLsM]*) #shellcheck disable=SC2046
+      set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}"
+      ;;
+
     *) break
       ;;
   esac
@@ -133,7 +131,6 @@ $long_desc
 ## query_role
 
 $query_role
-
 "
 
 SHLOCK+=(
