@@ -3,7 +3,6 @@ CLAUDE.md
 .claude/
 BASH-CODING-STANDARD.md
 AUDIT-*.md
-okusi/
 
 __pycache__
 .venv
