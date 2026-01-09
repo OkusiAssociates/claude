@@ -13,13 +13,13 @@
 #   -C, --clobber       Overwrite existing config files
 #
 set -euo pipefail
-shopt -s inherit_errexit extglob nullglob
+shopt -s inherit_errexit shift_verbose extglob nullglob
 
-declare -r VERSION=1.3.0
-#shellcheck disable=SC2155
-declare -r SCRIPT_PATH=$(realpath -- "$0")
-declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
-declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
+VERSION=1.3.1
+SCRIPT_PATH=$(realpath -- "$0")
+SCRIPT_DIR=${SCRIPT_PATH%/*}
+SCRIPT_NAME=${SCRIPT_PATH##*/}
+readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME
 
 # Configuration
 declare -r ENTERPRISE_DIR=/etc/claude-code
@@ -158,11 +158,12 @@ main() {
     # Copy agents, commands, rules from template
     for subdir in agents commands rules; do
       if [[ -d "$enterprise_template/$subdir" ]]; then
-        if [[ ! -d "$ENTERPRISE_CLAUDE_DIR/$subdir" ]] || ((clobber)); then
+        # Copy if target dir is empty OR clobber is set
+        if ! compgen -G "$ENTERPRISE_CLAUDE_DIR/$subdir/*" &>/dev/null || ((clobber)); then
           cp -r "$enterprise_template/$subdir/"* "$ENTERPRISE_CLAUDE_DIR/$subdir/" 2>/dev/null || true
           status "Copied $subdir/"
         else
-          warn "$subdir/ already exists (use --clobber to overwrite)"
+          warn "$subdir/ already has content (use --clobber to overwrite)"
         fi
       fi
     done
