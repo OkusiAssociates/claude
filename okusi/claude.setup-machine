@@ -7,7 +7,7 @@
 # Options:
 #   -h, --help          Show this help message
 #   -V, --version       Show version
-#   -i, --skip-install  Skip npm installation (assume already installed)
+#   -i, --skip-install  Skip binary check (assume already verified)
 #   -p, --skip-plugins  Skip plugin marketplace setup
 #   -m, --skip-mcp      Skip MCP configuration
 #   -C, --clobber       Overwrite existing config files
@@ -15,11 +15,13 @@
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-VERSION=1.3.1
-SCRIPT_PATH=$(realpath -- "$0")
-SCRIPT_DIR=${SCRIPT_PATH%/*}
-SCRIPT_NAME=${SCRIPT_PATH##*/}
-readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME
+### VERSION
+declare -r VERSION=1.4.0
+###
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
+declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
 
 # Configuration
 declare -r ENTERPRISE_DIR=/etc/claude-code
@@ -52,7 +54,7 @@ DESCRIPTION
     Sets up Claude Code enterprise configuration for multi-user access.
 
     This script:
-    - Installs Claude Code globally via npm (optional)
+    - Verifies Claude Code binary at /usr/local/bin/claude
     - Creates the claude-users group (GID $CLAUDE_GID)
     - Sets up enterprise config at $ENTERPRISE_DIR
     - Copies enterprise templates (.claude/, CLAUDE.md, rules)
@@ -60,13 +62,17 @@ DESCRIPTION
     - Creates managed-mcp.json for MCP servers
     - Verifies MCP server dependencies (uv, customkb)
 
+PREREQUISITES
+    Claude Code must be installed at /usr/local/bin/claude before running.
+    Copy from another host: scp okusi2:/usr/local/bin/claude /usr/local/bin/
+
 USAGE
     sudo $SCRIPT_NAME [OPTIONS]
 
 OPTIONS
     -h, --help          Show this help message
     -V, --version       Show version
-    -i, --skip-install  Skip npm installation
+    -i, --skip-install  Skip binary check
     -p, --skip-plugins  Skip plugin marketplace setup
     -m, --skip-mcp      Skip MCP configuration
     -C, --clobber       Overwrite existing config files
@@ -82,7 +88,7 @@ USER CONFIGURATION
 
 REQUIRES
     - Root privileges
-    - npm and Node.js 18+
+    - Claude Code binary at /usr/local/bin/claude
 
 EOF
 }
@@ -116,21 +122,18 @@ main() {
   echo '====================================='
   echo
 
-  # Step 1: Install Claude Code globally
+  # Step 1: Verify Claude Code binary
   if ((skip_install)); then
-    warn 'Skipping Claude Code installation (--skip-install)'
+    warn 'Skipping binary check (--skip-install)'
   else
-    info 'Installing Claude Code globally...'
-    if command -v claude &>/dev/null; then
+    info 'Checking for Claude Code binary...'
+    if [[ -x /usr/local/bin/claude ]]; then
       local -- current_version
-      current_version=$(claude --version 2>&1 | head -1 || echo "unknown")
-      warn "Claude Code already installed: $current_version"
-      info 'Running update...'
-      npm update -g @anthropic-ai/claude-code || warn 'Update failed, continuing...'
+      current_version=$(/usr/local/bin/claude --version 2>&1 | head -1 || echo "unknown")
+      status "Claude Code found: $current_version"
     else
-      npm install -g @anthropic-ai/claude-code
+      die 1 'Claude Code not installed at /usr/local/bin/claude. Copy from another host first.'
     fi
-    status "Claude Code installed: $(claude --version 2>&1 | head -1)"
   fi
 
   # Step 2: Create group
@@ -152,7 +155,7 @@ main() {
   status 'Enterprise directories created'
 
   # Step 4: Copy enterprise .claude/ template
-  local -- enterprise_template="$SCRIPT_DIR"/.claude.template-enterprize
+  local -- enterprise_template="$SCRIPT_DIR"/.claude.template-enterprise
   if [[ -d $enterprise_template ]]; then
     info 'Copying enterprise .claude/ template...'
     # Copy agents, commands, rules from template
