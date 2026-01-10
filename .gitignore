@@ -31,6 +31,8 @@ refactor*.txt
 
 # Project-specific directories and files
 CLAUDE.md
+!okusi/.claude.template-enterprise/CLAUDE.md
+!okusi/.claude.template-user/CLAUDE.md
 .dev/
 dev/
 .gudang/
