@@ -1,7 +1,116 @@
 #!/bin/bash
-# Update Claude CLI
+#shellcheck disable=SC2015,SC2012
+# Update Claude CLI - handles system installations properly
 set -euo pipefail
+shopt -s inherit_errexit
 
-claude update "$@"
+VERSION='1.1.0'
+SCRIPT_PATH=$(realpath -- "$0")
+SCRIPT_NAME=${SCRIPT_PATH##*/}
+readonly VERSION SCRIPT_PATH SCRIPT_NAME
+
+# Color output
+if [[ -t 2 ]]; then
+  RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  RED='' CYAN='' NC=''
+fi
+readonly RED CYAN NC
+
+info() { >&2 echo "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
+error() { >&2 echo "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
+die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
+
+SYSTEM_CLAUDE=/usr/local/bin/claude
+NATIVE_DIR="$HOME/.local/share/claude"
+NATIVE_BIN="$HOME/.local/bin/claude"
+
+show_help() {
+  cat <<EOF
+$SCRIPT_NAME $VERSION - Update Claude CLI (handles system installations)
+
+USAGE
+    $SCRIPT_NAME [OPTIONS]
+
+OPTIONS
+    -h, --help      Show this help
+    -V, --version   Show version
+
+BEHAVIOR
+    For system installations (/usr/local/bin/claude):
+      1. Runs 'claude update' to download latest version
+      2. Copies new binary to /usr/local/bin/claude (requires sudo)
+      3. Cleans up native installation files
+
+    For native installations:
+      Runs 'claude update' normally
+EOF
+}
+
+# Parse arguments
+while (($#)); do
+  case $1 in
+    -h|--help) show_help; exit 0 ;;
+    -V|--version) echo "$SCRIPT_NAME $VERSION"; exit 0 ;;
+    *) break ;;
+  esac
+  shift
+done
+
+# Determine installation type
+if [[ -x "$SYSTEM_CLAUDE" ]]; then
+  info "System installation detected at $SYSTEM_CLAUDE"
+
+  # Get current version
+  current_version=$("$SYSTEM_CLAUDE" --version 2>/dev/null | head -1) || current_version="unknown"
+  info "Current version: $current_version"
+
+  # Run update (downloads to native location)
+  info "Downloading latest version..."
+  claude update "$@" || die 1 "Update failed"
+
+  # Find the new version
+  if [[ -d "$NATIVE_DIR/versions" ]]; then
+    new_version=$(ls -1 "$NATIVE_DIR/versions" | sort -V | tail -1)
+    new_binary="$NATIVE_DIR/versions/$new_version"
+
+    if [[ -x "$new_binary" ]]; then
+      info "New version downloaded: $new_version"
+
+      # Copy to system location (needs sudo)
+      info "Installing to $SYSTEM_CLAUDE (requires sudo)..."
+      sudo cp "$new_binary" "$SYSTEM_CLAUDE" || die 1 "Failed to copy to $SYSTEM_CLAUDE"
+      sudo chmod 755 "$SYSTEM_CLAUDE" || die 1 "Failed to set permissions"
+      sudo chown root:root "$SYSTEM_CLAUDE" || die 1 "Failed to set ownership"
+
+      info "Cleaning up native installation..."
+      rm -rf "$NATIVE_DIR" || :
+      rm -f "$NATIVE_BIN" || :
+
+      # Fix config if needed
+      if [[ -f "$HOME/.claude.json" ]]; then
+        if command -v jq &>/dev/null; then
+          current_method=$(jq -r '.installMethod // "unknown"' "$HOME/.claude.json")
+          if [[ "$current_method" != "system" ]]; then
+            info "Updating config to installMethod=system"
+            jq '.installMethod = "system"' "$HOME/.claude.json" > /tmp/claude.json.tmp
+            mv /tmp/claude.json.tmp "$HOME/.claude.json"
+          fi
+        fi
+      fi
+
+      new_installed=$("$SYSTEM_CLAUDE" --version 2>/dev/null | head -1)
+      info "Successfully updated: $new_installed"
+    else
+      error "New binary not found at $new_binary"
+      exit 1
+    fi
+  else
+    info "Already at latest version"
+  fi
+else
+  # Native installation - just run update normally
+  claude update "$@"
+fi
 
 #fin
