@@ -1,29 +1,31 @@
 #!/bin/bash
-#shellcheck disable=SC2015,SC2012
+#shellcheck disable=SC2015  # A && B || C pattern is intentional
+#shellcheck disable=SC2012  # ls used safely for version sorting
 # Update Claude CLI - handles system installations properly
 set -euo pipefail
-shopt -s inherit_errexit
+shopt -s inherit_errexit shift_verbose extglob nullglob
 
-VERSION='1.1.0'
-SCRIPT_PATH=$(realpath -- "$0")
-SCRIPT_NAME=${SCRIPT_PATH##*/}
-readonly VERSION SCRIPT_PATH SCRIPT_NAME
+### VERSION
+declare -r VERSION=1.2.0
+###
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -- "$0")
+declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
 
 # Color output
 if [[ -t 2 ]]; then
-  RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+  declare -r RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
 else
-  RED='' CYAN='' NC=''
+  declare -r RED='' CYAN='' NC=''
 fi
-readonly RED CYAN NC
 
 info() { >&2 echo "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
 error() { >&2 echo "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
 die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 
-SYSTEM_CLAUDE=/usr/local/bin/claude
-NATIVE_DIR="$HOME/.local/share/claude"
-NATIVE_BIN="$HOME/.local/bin/claude"
+declare -r SYSTEM_CLAUDE=${SYSTEM_CLAUDE:-/usr/local/bin/claude}
+declare -r NATIVE_DIR="$HOME"/.local/share/claude
+declare -r NATIVE_BIN="$HOME"/.local/bin/claude
 
 show_help() {
   cat <<EOF
@@ -47,32 +49,54 @@ BEHAVIOR
 EOF
 }
 
-# Parse arguments
-while (($#)); do
-  case $1 in
-    -h|--help) show_help; exit 0 ;;
-    -V|--version) echo "$SCRIPT_NAME $VERSION"; exit 0 ;;
-    *) break ;;
-  esac
-  shift
-done
+main() {
 
-# Determine installation type
-if [[ -x "$SYSTEM_CLAUDE" ]]; then
-  info "System installation detected at $SYSTEM_CLAUDE"
+  # Parse arguments
+  while (($#)); do
+    case $1 in
+      -h|--help) show_help; return 0 ;;
+      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      *) break ;;
+    esac
+    shift
+  done
+
+  # Determine installation type
+  if [[ ! -x "$SYSTEM_CLAUDE" ]]; then
+    # Native installation - just run update normally
+    claude update "$@"
+    return $?
+  fi
+
+  info "System installation detected at ${SYSTEM_CLAUDE@Q}"
 
   # Get current version
+  local -- current_version
   current_version=$("$SYSTEM_CLAUDE" --version 2>/dev/null | head -1) || current_version="unknown"
   info "Current version: $current_version"
 
+  # Fix config BEFORE update if needed (prevents "Failed to check for updates" error)
+  if [[ -f "$HOME"/.claude.json ]] && command -v jq &>/dev/null; then
+    local -- current_method
+    current_method=$(jq -r '.installMethod // "unknown"' "$HOME/.claude.json")
+    if [[ "$current_method" != system ]]; then
+      info 'Setting installMethod=system before update'
+      local -- tmp_file
+      tmp_file=$(mktemp) || die 1 'Failed to create temp file'
+      jq '.installMethod = "system"' "$HOME"/.claude.json > "$tmp_file"
+      mv "$tmp_file" "$HOME"/.claude.json
+    fi
+  fi
+
   # Run update (downloads to native location)
-  info "Downloading latest version..."
-  claude update "$@" || die 1 "Update failed"
+  info 'Downloading latest version...'
+  claude update "$@" || die 1 'Update failed'
 
   # Find the new version
-  if [[ -d "$NATIVE_DIR/versions" ]]; then
-    new_version=$(ls -1 "$NATIVE_DIR/versions" | sort -V | tail -1)
-    new_binary="$NATIVE_DIR/versions/$new_version"
+  if [[ -d "$NATIVE_DIR"/versions ]] && [[ -n "$(ls -A "$NATIVE_DIR"/versions 2>/dev/null)" ]]; then
+    local -- new_version new_binary
+    new_version=$(ls -1 "$NATIVE_DIR"/versions | sort -V | tail -1)
+    new_binary="$NATIVE_DIR"/versions/"$new_version"
 
     if [[ -x "$new_binary" ]]; then
       info "New version downloaded: $new_version"
@@ -87,30 +111,30 @@ if [[ -x "$SYSTEM_CLAUDE" ]]; then
       rm -rf "$NATIVE_DIR" || :
       rm -f "$NATIVE_BIN" || :
 
-      # Fix config if needed
-      if [[ -f "$HOME/.claude.json" ]]; then
-        if command -v jq &>/dev/null; then
-          current_method=$(jq -r '.installMethod // "unknown"' "$HOME/.claude.json")
-          if [[ "$current_method" != "system" ]]; then
-            info "Updating config to installMethod=system"
-            jq '.installMethod = "system"' "$HOME/.claude.json" > /tmp/claude.json.tmp
-            mv /tmp/claude.json.tmp "$HOME/.claude.json"
-          fi
+      # Restore config to system (claude update may have changed it to native)
+      if [[ -f "$HOME"/.claude.json ]] && command -v jq &>/dev/null; then
+        local -- post_method
+        post_method=$(jq -r '.installMethod // "unknown"' "$HOME/.claude.json")
+        if [[ "$post_method" != system ]]; then
+          info 'Restoring installMethod=system after update'
+          local -- tmp_file2
+          tmp_file2=$(mktemp) || die 1 'Failed to create temp file'
+          jq '.installMethod = "system"' "$HOME"/.claude.json > "$tmp_file2"
+          mv "$tmp_file2" "$HOME"/.claude.json
         fi
       fi
 
+      local -- new_installed
       new_installed=$("$SYSTEM_CLAUDE" --version 2>/dev/null | head -1)
       info "Successfully updated: $new_installed"
     else
-      error "New binary not found at $new_binary"
+      error "New binary not found at ${new_binary@Q}"
       exit 1
     fi
   else
-    info "Already at latest version"
+    info 'Already at latest version'
   fi
-else
-  # Native installation - just run update normally
-  claude update "$@"
-fi
+}
 
+main "$@"
 #fin
