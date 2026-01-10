@@ -1,0 +1,331 @@
+#!/bin/bash
+#shellcheck disable=SC2250
+# claude-agent: Symlink-based agent launcher for claude.x
+# Eliminates boilerplate in individual agent wrapper scripts
+set -euo pipefail
+shopt -s inherit_errexit extglob nullglob
+
+# ============================================================================
+# Script Metadata
+# ============================================================================
+
+declare -r VERSION=1.0.0
+declare -r SCRIPT_PATH=$(realpath -e -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
+declare -r SCRIPT_NAME=${0##*/}
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+declare -r AGENTS_JSON="$SCRIPT_DIR"/Agents.json
+declare -r LOGFILE=/var/log/agents/"$SCRIPT_NAME".log
+
+declare -- AGENT_NAME=''
+declare -- agent_key=''
+declare -i isolated_flag=-1  # -1=auto from Agents.json, 0=no, 1=yes
+declare -a SHLOCK_ARGS=()
+declare -a CLAUDE_ARGS=()
+
+declare -ix CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
+
+# ============================================================================
+# Color Definitions
+# ============================================================================
+
+if [[ -t 1 && -t 2 ]]; then
+  declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[0;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
+fi
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+info()  { >&2 printf '%s: %s◉%s %s\n' "$SCRIPT_NAME" "$CYAN" "$NC" "$*"; }
+warn()  { >&2 printf '%s: %s▲%s %s\n' "$SCRIPT_NAME" "$YELLOW" "$NC" "$*"; }
+error() { >&2 printf '%s: %s✗%s %s\n' "$SCRIPT_NAME" "$RED" "$NC" "$*"; }
+die()   { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+show_version() {
+  printf '%s %s\n' "$SCRIPT_NAME" "$VERSION"
+  claude.x --version 2>/dev/null || true
+}
+
+list_agents() {
+  [[ -f "$AGENTS_JSON" ]] || die 1 "Agents.json not found: $AGENTS_JSON"
+  printf '%sAvailable agents:%s\n' "$CYAN" "$NC"
+  jq -r 'keys[]' "$AGENTS_JSON" | while IFS= read -r key; do
+    local -- short_name=${key%% -*}
+    short_name=${short_name,,}  # lowercase
+    printf '  %s%-12s%s %s\n' "$GREEN" "$short_name" "$NC" "$key"
+  done
+}
+
+setup_log() {
+  if ((EUID)); then
+    die 1 '--setup requires root privileges. Run with sudo.'
+  fi
+  [[ -d /var/log/agents ]] || mkdir -p /var/log/agents
+  chmod 755 /var/log/agents
+  chown root:adm /var/log/agents
+  touch "$LOGFILE"
+  chmod 666 "$LOGFILE"
+  chown root:adm "$LOGFILE"
+  info "Log directory /var/log/agents (755, root:adm)"
+  info "Log file created ${LOGFILE@Q} (666, root:adm)"
+}
+
+ensure_claude_dir() {
+  local -- target_dir=$1
+  local -- claude_dir="$target_dir"/.claude
+
+  # Create .claude directory if missing
+  if [[ ! -d "$claude_dir" ]]; then
+    info "Creating ${claude_dir@Q}"
+    mkdir -p "$claude_dir"
+  fi
+
+  # Create CLAUDE.local.md if missing (using systemprompt from Agents.json)
+  if [[ ! -f "$claude_dir"/CLAUDE.local.md && -n "$agent_key" ]]; then
+    local -- systemprompt
+    systemprompt=$(jq -r ".\"$agent_key\".systemprompt // empty" "$AGENTS_JSON")
+    if [[ -n "$systemprompt" ]]; then
+      info "Installing agent prompt to ${claude_dir}/CLAUDE.local.md"
+      printf '%s\n' "$systemprompt" > "$claude_dir"/CLAUDE.local.md
+    fi
+  fi
+}
+
+show_help() {
+  cat <<EOF
+$SCRIPT_NAME $VERSION - Symlink-based agent launcher
+
+USAGE
+    $SCRIPT_NAME -T AGENT [OPTIONS] [-- claude-args...]
+    <agent-symlink> [OPTIONS] [-- claude-args...]
+
+DESCRIPTION
+    Launch claude.x with agent-specific configuration loaded from Agents.json.
+    Can be invoked directly with -T or via symlink (recommended).
+
+OPTIONS
+    -T, --agent AGENT     Specify agent name (case-insensitive prefix match)
+    -I, --isolated        Force isolation mode (skip user settings)
+    --no-isolated         Force non-isolation (override Agents.json)
+
+    -n, --new             Start fresh conversation
+    -c, --continue        Force continue previous conversation
+
+    -s, --steal           Steal lock from existing session
+    -M, --maxtokens       Set max output tokens to 64000
+
+    -l, --list            List available agents
+    -S, --setup           Setup log file (requires sudo)
+    -L, --show-log        Display the log file
+
+    -h, --help            Show this help message
+    -V, --version         Show version information
+
+SYMLINK INSTALLATION
+    cd /ai/scripts/claude/agents
+    ln -sf claude-agent leet
+    ln -sf claude-agent draa
+
+EXAMPLES
+    leet                          # Via symlink (auto-continues)
+    leet -n                       # Fresh conversation
+    leet --isolated               # Skip user settings
+
+    claude-agent -T leet          # Direct invocation
+    claude-agent -T draa --isolated
+    claude-agent --list           # Show available agents
+
+AVAILABLE AGENTS
+$(list_agents 2>/dev/null | sed 's/^/    /' || echo "    (could not load Agents.json)")
+
+EOF
+}
+
+# ============================================================================
+# Argument Parsing
+# ============================================================================
+
+parse_args() {
+  # Detect agent from symlink name
+  [[ "$SCRIPT_NAME" == claude-agent ]] || AGENT_NAME=$SCRIPT_NAME
+
+  while (($#)); do
+    case $1 in
+      -T|--agent)
+        shift
+        (($#)) || die 22 'Option -T requires an agent name'
+        AGENT_NAME=$1
+        ;;
+      -I|--isolated)
+        isolated_flag=1
+        ;;
+      --no-isolated)
+        isolated_flag=0
+        ;;
+      -n|--new|--no-continue)
+        CLAUDE_ARGS+=(--new)
+        ;;
+      -c|--continue)
+        CLAUDE_ARGS+=(--continue)
+        ;;
+      -s|--steal)
+        SHLOCK_ARGS+=(--steal)
+        ;;
+      -M|--maxtokens)
+        CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+        ;;
+      -l|--list)
+        list_agents
+        exit 0
+        ;;
+      -S|--setup)
+        setup_log
+        exit 0
+        ;;
+      -L|--show-log)
+        [[ -f "$LOGFILE" ]] || die 1 "Log file not found: $LOGFILE"
+        cat "$LOGFILE"
+        exit 0
+        ;;
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      -V|--version)
+        show_version
+        exit 0
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -[TInscMlSLhV]*)
+        # Split combined short options
+        #shellcheck disable=SC2046
+        set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}"
+        ;;
+      -*)
+        # Pass unknown options through to claude.x
+        CLAUDE_ARGS+=("$1")
+        ;;
+      *)
+        # Treat as positional arg for claude.x
+        break
+        ;;
+    esac
+    shift || break
+  done
+
+  # Remaining args passed to claude.x
+  CLAUDE_ARGS+=("$@")
+}
+
+# ============================================================================
+# Agent Resolution
+# ============================================================================
+
+resolve_agent() {
+  [[ -f "$AGENTS_JSON" ]] || die 1 "Agents.json not found: $AGENTS_JSON"
+
+  # Case-insensitive prefix match
+  agent_key=$(jq -r 'keys[]' "$AGENTS_JSON" | grep -i "^$AGENT_NAME" | head -n1)
+  [[ -n "$agent_key" ]] || die 1 "Agent ${AGENT_NAME@Q} not found in Agents.json"
+
+  info "Agent: $agent_key"
+}
+
+# ============================================================================
+# Build Command
+# ============================================================================
+
+build_command() {
+  # Add agent to claude.x command
+  CLAUDE_ARGS=(-T "$agent_key" "${CLAUDE_ARGS[@]}")
+
+  # Check isolation setting from Agents.json if not overridden
+  if ((isolated_flag == -1)); then
+    local -- isolated
+    isolated=$(jq -r ".\"$agent_key\".isolated // false" "$AGENTS_JSON")
+    [[ "$isolated" == true ]] && isolated_flag=1 || isolated_flag=0
+  fi
+
+  # Add isolation if enabled
+  if ((isolated_flag == 1)); then
+    CLAUDE_ARGS+=(--setting-sources 'project,local')
+    info "Isolation mode enabled"
+  fi
+
+  # Add BCS context if enabled for this agent
+  local -- bcs_context
+  bcs_context=$(jq -r ".\"$agent_key\".bcs_context // false" "$AGENTS_JSON")
+  if [[ "$bcs_context" == true ]]; then
+    if command -v bcs >/dev/null 2>&1; then
+      local -- BCS_FILE BCS_DIR
+      BCS_FILE=$(bcs default -f)
+      BCS_DIR=${BCS_FILE%/data/*}
+      CLAUDE_ARGS+=(--add-dir "$BCS_DIR")
+      CLAUDE_ARGS+=(--append-system-prompt "Note: Full BCS is at '$BCS_FILE'.")
+      info "BCS context added: $BCS_FILE"
+    else
+      warn "bcs command not found, skipping BCS context"
+    fi
+  fi
+
+  # Handle agent_dir for isolated mode
+  if ((isolated_flag == 1)); then
+    local -- agent_dir
+    agent_dir=$(jq -r ".\"$agent_key\".agent_dir // empty" "$AGENTS_JSON")
+    if [[ -n "$agent_dir" && -d "$agent_dir" ]]; then
+      ensure_claude_dir "$agent_dir"
+      info "Changing to agent directory: $agent_dir"
+      cd "$agent_dir"
+    fi
+  fi
+}
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+main() {
+  parse_args "$@"
+
+  # Require agent name
+  [[ -n "$AGENT_NAME" ]] || {
+    show_help
+    die 22 'No agent specified. Use -T AGENT or run via symlink.'
+  }
+
+  resolve_agent
+  build_command
+
+  # Build lock name from CWD
+  local -- lockname=${PWD//\//-}
+  lockname=${lockname/-/}
+
+  # Log invocation if log file is writable
+  if [[ -w "$LOGFILE" ]]; then
+    echo "$(date +'%F %T') ${SUDO_USER:-$USER} $lockname ${CLAUDE_ARGS[*]}" >>"$LOGFILE"
+  fi
+
+  # Set terminal title
+  echo -ne "\033]0;◯ ${AGENT_NAME} .../$(basename -- "$PWD")\007"
+
+  # Execute via shlock
+  exec shlock "${SHLOCK_ARGS[@]}" "$lockname-$SCRIPT_NAME" -- \
+    claude.x "${CLAUDE_ARGS[@]}"
+}
+
+main "$@"
+#fin
