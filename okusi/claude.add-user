@@ -6,7 +6,7 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='1.2.0'
+declare -r VERSION='1.3.0'
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
@@ -125,25 +125,20 @@ main() {
     if [[ -L $target ]]; then
       warn "Removing legacy symlink: $target"
       rm "$target"
-    elif [[ -e $target ]]; then
-      warn "$target already exists (skipping template copy)"
-      init_config=0
     fi
 
-    if ((init_config)); then
-      if [[ -d $USER_TEMPLATE ]]; then
-        mkdir -p "$target"
-        # Copy template contents
-        cp -r "$USER_TEMPLATE"/* "$target"/ 2>/dev/null || true
-        chown -R "$username":"$user_group" "$target"
-        chmod 755 "$target"
-        find "$target" -type d -exec chmod 755 {} \;
-        find "$target" -type f -exec chmod 644 {} \;
-        status "Initialized $target from template"
-      else
-        warn "User template not found: $USER_TEMPLATE"
-        info 'User can run claude to auto-initialize ~/.claude/'
-      fi
+    if [[ -d $USER_TEMPLATE ]]; then
+      mkdir -p "$target"
+      # Copy template contents (merges into existing directory)
+      cp -r "$USER_TEMPLATE"/* "$target"/ 2>/dev/null || true
+      chown -R "$username":"$user_group" "$target"
+      chmod 755 "$target"
+      find "$target" -type d -exec chmod 755 {} \;
+      find "$target" -type f -exec chmod 644 {} \;
+      status "Initialized $target from template"
+    else
+      warn "User template not found: $USER_TEMPLATE"
+      info 'User can run claude to auto-initialize ~/.claude/'
     fi
   else
     # Check for legacy symlink and warn

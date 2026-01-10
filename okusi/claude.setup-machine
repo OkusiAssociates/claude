@@ -10,13 +10,14 @@
 #   -i, --skip-install  Skip binary check (assume already verified)
 #   -p, --skip-plugins  Skip plugin marketplace setup
 #   -m, --skip-mcp      Skip MCP configuration
+#   -u, --skip-users    Skip user config initialization
 #   -C, --clobber       Overwrite existing config files
 #
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
 ### VERSION
-declare -r VERSION=1.4.0
+declare -r VERSION=1.5.0
 ###
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
@@ -61,6 +62,7 @@ DESCRIPTION
     - Clones plugin marketplaces from GitHub
     - Creates managed-mcp.json for MCP servers
     - Verifies MCP server dependencies (uv, customkb)
+    - Initializes ~/.claude/ for all claude-users members
 
 PREREQUISITES
     Claude Code must be installed at /usr/local/bin/claude before running.
@@ -75,6 +77,7 @@ OPTIONS
     -i, --skip-install  Skip binary check
     -p, --skip-plugins  Skip plugin marketplace setup
     -m, --skip-mcp      Skip MCP configuration
+    -u, --skip-users    Skip user config initialization
     -C, --clobber       Overwrite existing config files
 
 DIRECTORIES CREATED
@@ -94,7 +97,7 @@ EOF
 }
 
 main() {
-  local -i skip_install=0 skip_plugins=0 skip_mcp=0 clobber=0
+  local -i skip_install=0 skip_plugins=0 skip_mcp=0 skip_users=0 clobber=0
 
   # Parse arguments
   while (($#)); do
@@ -104,8 +107,9 @@ main() {
       -i|--skip-install)  skip_install=1 ;;
       -p|--skip-plugins)  skip_plugins=1 ;;
       -m|--skip-mcp)      skip_mcp=1 ;;
+      -u|--skip-users)    skip_users=1 ;;
       -C|--clobber)       clobber=1 ;;
-      -[hvipmC]*) #shellcheck disable=SC2046
+      -[hvipmCu]*) #shellcheck disable=SC2046
                           set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
       -*)                 die 22 "Invalid option ${1@Q} (use --help)" ;;
       *)                  die 2  "Unexpected argument ${1@Q}" ;;
@@ -314,6 +318,31 @@ EOF
   find "$ENTERPRISE_DIR" -type d -exec chmod 2775 {} \;
   find "$ENTERPRISE_DIR" -type f -exec chmod 664 {} \;
   status 'Permissions configured with setgid'
+
+  # Step 9: Initialize user configs for claude-users members
+  if ((skip_users)); then
+    warn 'Skipping user config initialization (--skip-users)'
+  else
+    info 'Checking user configurations...'
+    local -- user user_home members
+    members=$(getent group "$CLAUDE_GROUP" | cut -d: -f4)
+    if [[ -n $members ]]; then
+      while IFS= read -r user; do
+        [[ -n $user ]] || continue
+        user_home=$(getent passwd "$user" | cut -d: -f6)
+        [[ -d "$user_home" ]] || continue
+
+        if [[ ! -f "$user_home/.claude/CLAUDE.md" ]]; then
+          info "Initializing ~/.claude/ for user ${user@Q}..."
+          "$SCRIPT_DIR"/claude.add-user "$user" --init-config
+        else
+          status "User $user already has ~/.claude/CLAUDE.md"
+        fi
+      done <<< "${members//,/$'\n'}"
+    else
+      info 'No users in claude-users group yet'
+    fi
+  fi
 
   # Summary
   echo

@@ -1,128 +1,179 @@
 #!/usr/bin/env bash
+#shellcheck disable=SC2034  # VERSION/SCRIPT_* used for consistency
 #───────────────────────────────────────────────────────────────────────────────
-# claude-cascade - Display the CLAUDE.md memory file cascade
+# claude.cascade - Display the CLAUDE.md memory file cascade
 #───────────────────────────────────────────────────────────────────────────────
 # Shows all CLAUDE.md files in load order (enterprise → user → project)
-# Usage: claude-cascade [directory]
+# Usage: claude.cascade [directory]
 #───────────────────────────────────────────────────────────────────────────────
-
 set -euo pipefail
+shopt -s inherit_errexit extglob nullglob
 
-# Colors
-readonly GREEN=$'\e[32m'
-readonly RED=$'\e[31m'
-readonly CYAN=$'\e[36m'
-readonly DIM=$'\e[2m'
-readonly RESET=$'\e[0m'
+### VERSION
+declare -r VERSION=1.2.0
+###
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
+
+# Colors (conditional on TTY)
+if [[ -t 1 ]]; then
+  declare -r GREEN=$'\e[32m' RED=$'\e[31m' CYAN=$'\e[36m' DIM=$'\e[2m' NC=$'\e[0m'
+else
+  declare -r GREEN='' RED='' CYAN='' DIM='' NC=''
+fi
 
 # Icons (from documentation standards)
-readonly CHECK="✓"
-readonly CROSS="✗"
+declare -r CHECK="✓" CROSS="✗"
+
+show_help() {
+  cat <<EOF
+$SCRIPT_NAME $VERSION - Display CLAUDE.md memory file cascade
+
+DESCRIPTION
+    Shows all CLAUDE.md files in load order (enterprise → user → project).
+    Higher priority files override lower priority instructions.
+
+USAGE
+    $SCRIPT_NAME [OPTIONS] [DIRECTORY]
+
+OPTIONS
+    -h, --help      Show this help message
+    -V, --version   Show version
+
+ARGUMENTS
+    DIRECTORY       Target directory (default: current directory)
+
+LOAD ORDER
+    [1]  Enterprise Policy    /etc/claude-code/CLAUDE.md
+    [1b] Enterprise Rules     /etc/claude-code/.claude/{CLAUDE.md,rules/}
+    [2]  User Memory          ~/.claude/CLAUDE.md
+    [3]  User Rules           ~/.claude/rules/
+    [4]  Project Hierarchy    Walk up from target to root
+
+EOF
+}
 
 show_file() {
-    local path="$1"
-    local label="$2"
-    local expanded
-    expanded=$(eval echo "$path")
+  local -- path=$1 label=$2
+  local -- expanded=${path/#\~/$HOME}
 
-    if [[ -e "$expanded" ]]; then
-        local size
-        size=$(stat -c%s "$expanded" 2>/dev/null || echo "?")
-        printf "%s${GREEN}${CHECK}${RESET} %-45s ${DIM}(%s bytes)${RESET}\n" "$label" "$expanded" "$size"
-    else
-        printf "%s${RED}${CROSS}${RESET} ${DIM}%-45s (not found)${RESET}\n" "$label" "$expanded"
-    fi
+  if [[ -e $expanded ]]; then
+    local -- size
+    size=$(stat -c%s "$expanded" 2>/dev/null) || size="?"
+    printf "%s${GREEN}${CHECK}${NC} %-45s ${DIM}(%s bytes)${NC}\n" "$label" "$expanded" "$size"
+  else
+    printf "%s${RED}${CROSS}${NC} ${DIM}%-45s (not found)${NC}\n" "$label" "$expanded"
+  fi
 }
 
 show_rules_dir() {
-    local dir="$1"
-    local label="$2"
-    local expanded
-    expanded=$(eval echo "$dir")
+  local -- dir=$1 label=$2
+  local -- expanded=${dir/#\~/$HOME}
 
-    if [[ -d "$expanded" ]]; then
-        local count
-        count=$(find "$expanded" -name "*.md" -type f 2>/dev/null | wc -l)
-        printf "%s${CYAN}▸${RESET} %-45s ${DIM}(%d files)${RESET}\n" "$label" "$expanded" "$count"
-        # List individual rule files
-        while IFS= read -r -d '' rule; do
-            local rsize
-            rsize=$(stat -c%s "$rule" 2>/dev/null || echo "?")
-            printf "%s  ${GREEN}${CHECK}${RESET} ${DIM}└─${RESET} %-41s ${DIM}(%s bytes)${RESET}\n" "$label" "${rule##*/}" "$rsize"
-        done < <(find "$expanded" -name "*.md" -type f -print0 2>/dev/null | sort -z)
-    else
-        printf "%s${RED}${CROSS}${RESET} ${DIM}%-45s (not found)${RESET}\n" "$label" "$expanded"
-    fi
+  if [[ -d $expanded ]]; then
+    local -i count
+    count=$(find "$expanded" -name "*.md" -type f 2>/dev/null | wc -l)
+    printf "%s${CYAN}▸${NC} %-45s ${DIM}(%d files)${NC}\n" "$label" "$expanded" "$count"
+    # List individual rule files
+    local -- rule rsize
+    while IFS= read -r -d '' rule; do
+      rsize=$(stat -c%s "$rule" 2>/dev/null) || rsize="?"
+      printf "%s  ${GREEN}${CHECK}${NC} ${DIM}└─${NC} %-41s ${DIM}(%s bytes)${NC}\n" "$label" "${rule##*/}" "$rsize"
+    done < <(find "$expanded" -name "*.md" -type f -print0 2>/dev/null | sort -z)
+  else
+    printf "%s${RED}${CROSS}${NC} ${DIM}%-45s (not found)${NC}\n" "$label" "$expanded"
+  fi
 }
 
 walk_up_tree() {
-    local cwd="$1"
-    local dir="$cwd"
-    local found=()
+  local -- cwd=$1
+  local -- dir=$cwd
+  local -a found=()
 
-    # Walk up from cwd to root, collecting CLAUDE.md files
-    while [[ "$dir" != "/" ]]; do
-        [[ -f "$dir/CLAUDE.md" ]] && found+=("$dir/CLAUDE.md")
-        [[ -f "$dir/.claude/CLAUDE.md" ]] && found+=("$dir/.claude/CLAUDE.md")
-        [[ -f "$dir/CLAUDE.local.md" ]] && found+=("$dir/CLAUDE.local.md")
-        dir=$(dirname "$dir")
-    done
+  # Walk up from cwd to root, collecting CLAUDE.md files
+  while [[ $dir != "/" ]]; do
+    [[ -f "$dir/CLAUDE.md" ]] && found+=("$dir/CLAUDE.md")
+    [[ -f "$dir/.claude/CLAUDE.md" ]] && found+=("$dir/.claude/CLAUDE.md")
+    [[ -f "$dir/CLAUDE.local.md" ]] && found+=("$dir/CLAUDE.local.md")
+    dir=$(dirname "$dir")
+  done
 
-    # Print in reverse (root to cwd) for load order
-    for ((i=${#found[@]}-1; i>=0; i--)); do
-        echo "${found[i]}"
-    done
+  # Print in reverse (root to cwd) for load order
+  local -i i
+  for ((i=${#found[@]}-1; i>=0; i--)); do
+    echo "${found[i]}"
+  done
 }
 
 main() {
-    local target_dir="${1:-.}"
-    target_dir=$(cd "$target_dir" && pwd)
+  local -- target_dir=''
 
-    echo "═══════════════════════════════════════════════════════════════════"
-    echo " CLAUDE.md Cascade — Load Order (lowest → highest priority)"
-    echo "═══════════════════════════════════════════════════════════════════"
-    echo ""
+  # Parse arguments
+  while (($#)); do
+    case $1 in
+      -h|--help)    show_help; return 0 ;;
+      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -*)           echo "$SCRIPT_NAME: Unknown option ${1@Q}" >&2; return 22 ;;
+      *)            target_dir=$1 ;;
+    esac
+    shift
+  done
 
-    # 1. Enterprise
-    echo "${CYAN}[1] Enterprise Policy${RESET}"
-    show_file "/etc/claude-code/CLAUDE.md" "    "
-    echo ""
+  target_dir=$(cd "${target_dir:-.}" && pwd)
 
-    # 2. User Memory
-    echo "${CYAN}[2] User Memory${RESET}"
-    show_file "~/.claude/CLAUDE.md" "    "
-    echo ""
+  echo "═══════════════════════════════════════════════════════════════════"
+  echo " CLAUDE.md Cascade — Load Order (lowest → highest priority)"
+  echo "═══════════════════════════════════════════════════════════════════"
+  echo ""
 
-    # 3. User Rules
-    echo "${CYAN}[3] User Rules${RESET}"
-    show_rules_dir "~/.claude/rules" "    "
-    echo ""
+  # 1. Enterprise Policy
+  echo "${CYAN}[1] Enterprise Policy${NC}"
+  show_file "/etc/claude-code/CLAUDE.md" "    "
+  echo ""
 
-    # 4. Project hierarchy (walk up tree)
-    echo "${CYAN}[4] Project Hierarchy${RESET} ${DIM}(from $target_dir)${RESET}"
+  # 1b. Enterprise .claude/
+  echo "${CYAN}[1b] Enterprise Rules${NC}"
+  show_file "/etc/claude-code/.claude/CLAUDE.md" "    "
+  show_rules_dir "/etc/claude-code/.claude/rules" "    "
+  echo ""
 
-    # Project rules in cwd
-    if [[ -d "$target_dir/.claude/rules" ]]; then
-        show_rules_dir "$target_dir/.claude/rules" "    "
-    fi
+  # 2. User Memory
+  echo "${CYAN}[2] User Memory${NC}"
+  show_file "$HOME/.claude/CLAUDE.md" "    "
+  echo ""
 
-    # Walk up and show project files
-    local tree_files
-    tree_files=$(walk_up_tree "$target_dir")
-    if [[ -n "$tree_files" ]]; then
-        while IFS= read -r f; do
-            local fsize
-            fsize=$(stat -c%s "$f" 2>/dev/null || echo "?")
-            printf "    ${GREEN}${CHECK}${RESET} %-45s ${DIM}(%s bytes)${RESET}\n" "$f" "$fsize"
-        done <<< "$tree_files"
-    else
-        printf "    ${DIM}(no project CLAUDE.md files found in tree)${RESET}\n"
-    fi
-    echo ""
+  # 3. User Rules
+  echo "${CYAN}[3] User Rules${NC}"
+  show_rules_dir "$HOME/.claude/rules" "    "
+  echo ""
 
-    echo "═══════════════════════════════════════════════════════════════════"
-    echo " ${DIM}Higher priority files override lower priority instructions${RESET}"
-    echo "═══════════════════════════════════════════════════════════════════"
+  # 4. Project hierarchy (walk up tree)
+  echo "${CYAN}[4] Project Hierarchy${NC} ${DIM}(from $target_dir)${NC}"
+
+  # Project rules in cwd
+  if [[ -d "$target_dir/.claude/rules" ]]; then
+    show_rules_dir "$target_dir/.claude/rules" "    "
+  fi
+
+  # Walk up and show project files
+  local -- tree_files f fsize
+  tree_files=$(walk_up_tree "$target_dir")
+  if [[ -n $tree_files ]]; then
+    while IFS= read -r f; do
+      fsize=$(stat -c%s "$f" 2>/dev/null) || fsize="?"
+      printf "    ${GREEN}${CHECK}${NC} %-45s ${DIM}(%s bytes)${NC}\n" "$f" "$fsize"
+    done <<< "$tree_files"
+  else
+    echo "    ${DIM}(no project CLAUDE.md files found in tree)${NC}"
+  fi
+  echo ""
+
+  echo "═══════════════════════════════════════════════════════════════════"
+  echo " ${DIM}Higher priority files override lower priority instructions${NC}"
+  echo "═══════════════════════════════════════════════════════════════════"
 }
 
 main "$@"
+
+#fin
