@@ -6,7 +6,7 @@ set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
 ### VERSION
-declare -r VERSION=1.2.0
+declare -r VERSION=1.3.0
 ###
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
@@ -43,6 +43,8 @@ BEHAVIOR
       1. Runs 'claude update' to download latest version
       2. Copies new binary to /usr/local/bin/claude (requires sudo)
       3. Cleans up native installation files
+      4. Creates ~/.local/bin/claude symlink if needed (bug #17289 workaround)
+      5. Ensures installMethod=system in ~/.claude.json
 
     For native installations:
       Runs 'claude update' normally
@@ -110,6 +112,16 @@ main() {
       info "Cleaning up native installation..."
       rm -rf "$NATIVE_DIR" || :
       rm -f "$NATIVE_BIN" || :
+
+      # Workaround for Claude Code detection bug (#17289):
+      # Claude ignores installMethod=system when ~/.local/bin/ exists.
+      # Create symlink to satisfy the detection check.
+      local -- local_bin="$HOME"/.local/bin
+      if [[ -d "$local_bin" && ! -e "$local_bin/claude" ]]; then
+        info "Creating symlink workaround for detection bug..."
+        ln -sf "$SYSTEM_CLAUDE" "$local_bin/claude"
+        info "Symlink: $local_bin/claude -> $SYSTEM_CLAUDE"
+      fi
 
       # Restore config to system (claude update may have changed it to native)
       if [[ -f "$HOME"/.claude.json ]] && command -v jq &>/dev/null; then

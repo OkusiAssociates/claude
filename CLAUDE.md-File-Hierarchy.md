@@ -13,25 +13,23 @@ CLAUDE.md is Claude Code's **memory system** — it provides persistent context 
 
 ---
 
-## The 5-Scope Hierarchy
+## The 4-Level Hierarchy (Official)
 
-Claude Code implements a hierarchical memory system with five distinct scopes:
+Claude Code implements a hierarchical memory system with four primary levels:
 
-| Scope | Location | Purpose | Shared? |
-|-------|----------|---------|---------|
-| **Enterprise** | `/etc/claude-code/CLAUDE.md` (Linux) | Organization-wide policies | All users |
-| **User** | `~/.claude/CLAUDE.md` | Personal preferences for all projects | Just you |
-| **User Rules** | `~/.claude/rules/*.md` | Modular personal rules | Just you |
-| **Project** | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Team-shared project instructions | Team (via git) |
-| **Project Rules** | `./.claude/rules/*.md` | Topic-specific project rules | Team (via git) |
-| **Project Local** | `./CLAUDE.local.md` | Personal project-specific prefs | Just you (gitignored) |
+| Priority | Memory Type | Location | Scope |
+|----------|-------------|----------|-------|
+| 1 (Highest) | **Enterprise Policy** | `/etc/claude-code/CLAUDE.md` (Linux) | All organization users |
+| 2 | **Project Memory** | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Team (via git) |
+| 3 | **Project Rules** | `./.claude/rules/*.md` | Team (via git) |
+| 4 (Lowest) | **User Memory** | `~/.claude/CLAUDE.md` | Individual user |
+| — | **Project Local** | `./CLAUDE.local.md` | Individual (gitignored) |
 
 ### File Paths by Operating System
 
 **Linux/WSL:**
 ```
 Enterprise:       /etc/claude-code/CLAUDE.md
-Enterprise Rules: /etc/claude-code/.claude/rules/*.md
 User:             ~/.claude/CLAUDE.md
 User Rules:       ~/.claude/rules/*.md
 Project:          ./CLAUDE.md or ./.claude/CLAUDE.md
@@ -42,7 +40,6 @@ Project Local:    ./CLAUDE.local.md
 **macOS:**
 ```
 Enterprise:       /Library/Application Support/ClaudeCode/CLAUDE.md
-Enterprise Rules: /Library/Application Support/ClaudeCode/.claude/rules/*.md
 User:             ~/.claude/CLAUDE.md
 User Rules:       ~/.claude/rules/*.md
 Project:          ./CLAUDE.md or ./.claude/CLAUDE.md
@@ -53,13 +50,34 @@ Project Local:    ./CLAUDE.local.md
 **Windows:**
 ```
 Enterprise:       C:\Program Files\ClaudeCode\CLAUDE.md
-Enterprise Rules: C:\Program Files\ClaudeCode\.claude\rules\*.md
 User:             ~/.claude/CLAUDE.md
 User Rules:       ~/.claude/rules/*.md
 Project:          ./CLAUDE.md or ./.claude/CLAUDE.md
 Project Rules:    ./.claude/rules/*.md
 Project Local:    ./CLAUDE.local.md
 ```
+
+---
+
+## Okusi Extensions
+
+▲ The following are **Okusi-specific extensions** not in official Claude Code documentation:
+
+### Enterprise Rules Directory
+
+```
+/etc/claude-code/.claude/rules/
+├── bash-coding-standard.md
+├── coding-principles.md
+├── deployment.md
+├── documentation.md
+├── environment.md
+├── git-commits.md
+├── oknav.md
+└── security.md
+```
+
+These modular enterprise rules are loaded with highest precedence and cannot be overridden.
 
 ---
 
@@ -71,34 +89,42 @@ Claude Code:
 
 1. **Walks up the directory tree** from cwd to `/`, collecting any `CLAUDE.md` or `CLAUDE.local.md` files
 
-2. **Loads files in this order** (general → specific):
-   - Enterprise policy (if present)
+2. **Loads files in precedence order** (highest → lowest):
+   - Enterprise policy (if present) — cannot be overridden
+   - Project memory (`./CLAUDE.md`)
+   - Project rules (`./.claude/rules/*.md`)
    - User memory (`~/.claude/CLAUDE.md`)
    - User rules (`~/.claude/rules/*.md`)
-   - Project rules (`./.claude/rules/*.md`)
-   - Project memory (`./CLAUDE.md`)
-   - Project local (`./CLAUDE.local.md`)
+   - Project local (`./CLAUDE.local.md`) — personal overrides
 
 3. **Subtree discovery**: CLAUDE.md files in subdirectories are loaded *lazily* — only when Claude reads files in those directories
+
+### Loading Example
+
+When working in `/workspace/frontend/packages/ui/`, Claude Code loads:
+1. `/workspace/CLAUDE.md` (workspace conventions)
+2. `/workspace/frontend/CLAUDE.md` (frontend conventions)
+3. `/workspace/frontend/packages/ui/CLAUDE.md` (UI-specific)
+4. `~/.claude/CLAUDE.md` (personal preferences)
 
 ---
 
 ## Precedence Rules
 
-More specific scopes override more general ones:
+Higher-priority scopes override lower-priority ones:
 
 ```
 Enterprise Policy     ← Highest (cannot be overridden)
-    ↓
-Project Local         ← Your personal project prefs
     ↓
 Project Memory        ← Team shared
     ↓
 Project Rules         ← Modular team rules
     ↓
-User Rules            ← Your personal rules
+User Memory           ← Personal defaults
     ↓
-User Memory           ← Lowest priority
+User Rules            ← Personal modular rules
+    ↓
+Project Local         ← Personal project overrides
 ```
 
 **Example:** If `~/.claude/CLAUDE.md` says "use tabs" but `./CLAUDE.md` says "use spaces", the project instruction wins.
@@ -114,32 +140,6 @@ User Memory           ← Lowest priority
 - Deployed via configuration management (MDM, Ansible, etc.)
 - **Cannot be overridden by other scopes**
 
-### Enterprise Rules (`/etc/claude-code/.claude/rules/*.md`)
-- Modular organization-wide rules (same format as user/project rules)
-- Organized by topic for maintainability
-- Loaded with highest precedence (cannot be overridden)
-- Example structure:
-  ```
-  /etc/claude-code/.claude/rules/
-  ├── bash-coding-standard.md
-  ├── coding-principles.md
-  ├── documentation.md
-  ├── environment.md
-  ├── git-commits.md
-  └── oknav.md
-  ```
-
-### User Memory (`~/.claude/CLAUDE.md`)
-- Personal preferences across ALL projects
-- Code styling preferences
-- Personal tooling shortcuts
-- Individual workflow guidelines
-
-### User Rules (`~/.claude/rules/*.md`)
-- Modular personal rules for all projects
-- Organized by topic (e.g., `preferences.md`, `workflows.md`)
-- Loaded before project rules (lower precedence)
-
 ### Project Memory (`./CLAUDE.md` or `./.claude/CLAUDE.md`)
 - Team-shared instructions in version control
 - Project architecture documentation
@@ -151,6 +151,17 @@ User Memory           ← Lowest priority
 - Language guidelines (e.g., `rules/typescript.md`)
 - Testing conventions (e.g., `rules/testing.md`)
 - Supports subdirectory organization
+
+### User Memory (`~/.claude/CLAUDE.md`)
+- Personal preferences across ALL projects
+- Code styling preferences
+- Personal tooling shortcuts
+- Individual workflow guidelines
+
+### User Rules (`~/.claude/rules/*.md`)
+- Modular personal rules for all projects
+- Organized by topic (e.g., `preferences.md`, `workflows.md`)
+- Lower precedence than project rules
 
 ### Project Local Memory (`./CLAUDE.local.md`)
 - Personal project-specific preferences
@@ -180,6 +191,8 @@ Supported glob patterns:
 - `src/**/*` — All files under src/
 - `src/components/*.tsx` — Components in specific directory
 - `{src,lib}/**/*.ts` — Multiple patterns with braces
+
+Rules without a `paths` field are loaded unconditionally.
 
 ### Import Syntax
 
@@ -264,7 +277,7 @@ Organizations can deploy system-wide configuration files that cannot be overridd
 |----|-----------|
 | Linux/WSL | `/etc/claude-code/` |
 | macOS | `/Library/Application Support/ClaudeCode/` |
-| Windows | `C:\Program Files\ClaudeCode\` |
+| Windows | `C:\ProgramData\ClaudeCode\` |
 
 ### managed-mcp.json Example
 
@@ -304,18 +317,26 @@ Enterprise administrators can control which MCP servers are permitted:
 ├───────────────┬────────────────────────────────────┬──────────┬───────────┤
 │ Scope         │ File Path                          │ Priority │ Shared?   │
 ├───────────────┼────────────────────────────────────┼──────────┼───────────┤
-│ Ent. Policy   │ /etc/claude-code/CLAUDE.md         │ Highest  │ All users │
-│ Ent. Rules    │ /etc/claude-code/.claude/rules/    │ Highest  │ All users │
-│ Project Local │ ./CLAUDE.local.md                  │ High     │ No        │
-│ Project Mem   │ ./CLAUDE.md                        │ Medium   │ Yes (git) │
-│ Project Rules │ ./.claude/rules/*.md               │ Medium   │ Yes (git) │
-│ User Rules    │ ~/.claude/rules/                   │ Low      │ No        │
-│ User Memory   │ ~/.claude/CLAUDE.md                │ Lowest   │ No        │
+│ Ent. Policy   │ /etc/claude-code/CLAUDE.md         │ 1 (High) │ All users │
+│ Ent. Rules ▲  │ /etc/claude-code/.claude/rules/    │ 1 (High) │ All users │
+│ Project Mem   │ ./CLAUDE.md                        │ 2        │ Yes (git) │
+│ Project Rules │ ./.claude/rules/*.md               │ 3        │ Yes (git) │
+│ User Memory   │ ~/.claude/CLAUDE.md                │ 4 (Low)  │ No        │
+│ User Rules    │ ~/.claude/rules/                   │ 4 (Low)  │ No        │
+│ Project Local │ ./CLAUDE.local.md                  │ Override │ No        │
 └───────────────┴────────────────────────────────────┴──────────┴───────────┘
+▲ = Okusi custom extension
 ```
 
 This hierarchy ensures enterprise policies are always enforced while allowing teams and individuals to customize their Claude Code experience.
 
 ---
 
-*Generated: 2025-12-28*
+## References
+
+- [Claude Code Memory Docs](https://code.claude.com/docs/en/memory)
+- [Claude Code Settings Docs](https://code.claude.com/docs/en/settings)
+
+---
+
+*Updated: 2026-01-11*

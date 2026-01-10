@@ -1,34 +1,50 @@
 #!/bin/bash
-set -Eeuo pipefail
+set -euo pipefail
+shopt -s inherit_errexit
 
-# Add NodeSource repository and install
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# Claude Code Installation Guide
+cat <<'EOT'
 
-# Verify installation
-node -v  # Should show v22.x.x
-npm -v   # Should show npm version
+◉ Claude Code Installation
+  Official methods from Anthropic (2025)
 
-read
+  Native Binary (Recommended) - No Node.js required
+  Homebrew (macOS only)
+  npm (requires Node.js 18+)
 
-#  2. Configure npm for Global Packages (No sudo required)
+EOT
 
-# Create npm global directory
-mkdir -p ~/.npm-global
+read -p 'Press any key to continue...'
 
-# Configure npm to use new directory
-npm config set prefix '~/.npm-global'
+# 1. Native Binary Installation (Recommended)
+curl -fsSL https://claude.ai/install.sh | bash
 
-# Add to PATH (for bash)
-echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
+# 2. Reload Shell Configuration
+# shellcheck disable=SC1090
+source ~/.bashrc  # For zsh: source ~/.zshrc
 
-#  3. Install Claude Code Globally
-
-# Install without sudo
-npm install -g @anthropic-ai/claude-code
-
-# Verify installation
+# 3. Verify Installation
 claude --version
+claude doctor
+
+# 4. Authentication
+cat <<'EOT'
+
+◉ Authentication
+  Run 'claude' in your terminal
+  Type '/login' to authenticate with your Anthropic account
+
+◉ Alternative Installation Methods
+
+  macOS (Homebrew):
+    brew install --cask claude-code
+
+  npm (Cross-platform, requires Node.js 18+):
+    npm install -g @anthropic-ai/claude-code
+
+◉ Updates
+  claude update
+
+EOT
 
 #fin

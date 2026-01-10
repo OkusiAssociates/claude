@@ -6,7 +6,7 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='1.3.0'
+declare -r VERSION='1.5.0'
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
@@ -171,6 +171,35 @@ main() {
     else
       info 'No OAuth file. User must run claude to authenticate.'
     fi
+  fi
+
+  # Step 4: Ensure installMethod=system in .claude.json
+  # This prevents "installMethod is native, but claude command not found" errors
+  # when Claude Code is installed system-wide at /usr/local/bin/claude
+  if [[ -f "$oauth_target" ]] && command -v jq &>/dev/null; then
+    local -- current_method
+    current_method=$(jq -r '.installMethod // "unknown"' "$oauth_target" 2>/dev/null)
+    if [[ "$current_method" != "system" ]]; then
+      info "Setting installMethod=system in ${oauth_target@Q}..."
+      local -- tmp_file
+      tmp_file=$(mktemp)
+      jq '.installMethod = "system"' "$oauth_target" > "$tmp_file"
+      mv "$tmp_file" "$oauth_target"
+      chown "$username":"$user_group" "$oauth_target"
+      chmod 600 "$oauth_target"
+      status "installMethod set to system"
+    fi
+  fi
+
+  # Step 5: Create ~/.local/bin/claude symlink if directory exists
+  # This prevents "installMethod is native, but claude command not found" warnings
+  # when Claude Code detects ~/.local/bin directory and assumes native installation
+  local -- local_bin="$user_home"/.local/bin
+  if [[ -d "$local_bin" && ! -L "$local_bin/claude" ]]; then
+    info "Creating claude symlink in ${local_bin@Q}..."
+    ln -sf /usr/local/bin/claude "$local_bin/claude"
+    chown -h "$username":"$user_group" "$local_bin/claude"
+    status "Symlink created: $local_bin/claude -> /usr/local/bin/claude"
   fi
 
   # Summary
