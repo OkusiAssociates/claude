@@ -4,7 +4,7 @@
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-declare -r VERSION=1.0.6
+declare -r VERSION=1.0.7
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
 declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
@@ -21,6 +21,15 @@ declare -- BCS_TIER_FILE=${BCS_TIER_FILE:-/ai/scripts/Okusi/bash-coding-standard
 declare -- CLAUDE_X_AGENT=${CLAUDE_X_AGENT:-leet}
 
 declare -- CLAUDE_UPDATE=${CLAUDE_UPDATE:-0}
+
+declare -r CLAUDE_GROUP=${CLAUDE_GROUP:-claude-users}
+
+# Colors
+if [[ -t 1 && -t 2 ]]; then
+  declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[1;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
+fi
 
 version() { echo "$SCRIPT_NAME $VERSION"; }
 
@@ -48,23 +57,50 @@ Configurable Envvars showing current defaults:
   BCS_TIER_FILE=$BCS_TIER_FILE
   CLAUDE_UPDATE=$CLAUDE_UPDATE
   CLAUDE_X_AGENT=$CLAUDE_X_AGENT
+  CLAUDE_GROUP=$CLAUDE_GROUP
 
 Available Agents:
 
-$(find "$SCRIPT_DIR"/agents/ -maxdepth 1 -type d -exec basename {} \; |grep -v agents |sort |xargs -n1 echo  '   ')
+$(find "$SCRIPT_DIR"/agents/ -maxdepth 2 -type l -executable -exec basename {} \; 2>/dev/null | sort | xargs -n1 echo '   ')
 
 HELP
 }
 
-die() { (($# < 2)) || >&2 echo "$SCRIPT_NAME ${*:2}"; exit "${1:-0}"; }
+declare -i VERBOSE=1
+
+_msg() {
+  local -- prefix="$SCRIPT_NAME:" msg
+  case ${FUNCNAME[1]} in
+    vecho)   : ;;
+    info)    prefix+=" ${CYAN}◉${NC}" ;;
+    warn)    prefix+=" ${YELLOW}▲${NC}" ;;
+    success) prefix+=" ${GREEN}✓${NC}" ;;
+    error)   prefix+=" ${RED}✗${NC}" ;;
+    *)       ;;
+  esac
+  for msg in "$@"; do printf '%s %s\n' "$prefix" "$msg"; done
+}
+
+vecho() { ((VERBOSE)) || return 0; _msg "$@"; }
+info() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
+warn() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
+success() { ((VERBOSE)) || return 0; >&2 _msg "$@" || return 0; }
+error() { >&2 _msg "$@"; }
+die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
+yn() {
+  local -- REPLY
+  >&2 read -r -n 1 -p "$(2>&1 warn "${1:-'Continue?'}") y/n "
+  >&2 echo
+  [[ ${REPLY,,} == y ]]
+}
 
 # --------------------------------------------------------------------------------
 main() {
   local -- REPLY
   while (($#)); do
     case $1 in
-#      -v|--verbose)  VERBOSE+=1 ;;
-#      -q|--quiet)    VERBOSE=0 ;;
+      -v|--verbose)  VERBOSE+=1 ;;
+      -q|--quiet)    VERBOSE=0 ;;
       -u|--claude-update)
                      CLAUDE_UPDATE=1 ;;
       -V|--version)  version; return 0 ;;
@@ -112,23 +148,21 @@ main() {
     REINIT=1
   fi
   if ! sudo diff -q "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD" >/dev/null 2>&1; then
-    echo -e "\nWARNING: ${CLAUDE_ETC_MD@Q} differs from template ${CLAUDE_ENT_MD@Q}\n"
-    read -r -n 1 -p "Update ${CLAUDE_ETC_MD@Q}? y/n "
-    if [[ ${REPLY,,} == y ]]; then
+    warn "WARNING: ${CLAUDE_ETC_MD@Q} differs from template ${CLAUDE_ENT_MD@Q}\n"
+    if yn "Update ${CLAUDE_ETC_MD@Q}?"; then
       sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
       REINIT=1
     fi
-    echo
+    >&2 echo
   fi
-  sudo chown root:claude-users "$CLAUDE_ETC_MD"
+  sudo chown root:"$CLAUDE_GROUP" "$CLAUDE_ETC_MD"
   sudo chmod 664 "$CLAUDE_ETC_MD"
   sudo chmod 2775 "${CLAUDE_ETC_MD%/*}"
   
   # Check if project CLAUDE.md exists
   if [[ -f "$PROJECT_DIR"/CLAUDE.md ]]; then
-    echo "CLAUDE.md already exists in ${PROJECT_DIR@Q}."
-    read -r -n 1 -p 'Append canonical info? y/n '
-    if [[ ${REPLY,,} == y ]]; then
+    warn "CLAUDE.md already exists in ${PROJECT_DIR@Q}."
+    if yn 'Append canonical info?'; then
       { echo
         echo '---'
         cat -s "$CLAUDE_PROJECT_MD"
@@ -141,7 +175,7 @@ main() {
       cp -p "$CLAUDE_PROJECT_MD" "$PROJECT_DIR"/CLAUDE.md
     fi
   fi
-  echo
+  >&2 echo
   
   # Process .gitignore
   [[ -f "$PROJECT_DIR"/.gitignore ]] \
@@ -156,7 +190,6 @@ main() {
     fi
   done
   unset ignore
-
 
   echo "Project directory ${PROJECT_DIR@Q} has been $( ((REINIT==0)) || echo 're-' )initialized"
 
