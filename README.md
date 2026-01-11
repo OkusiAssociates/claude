@@ -445,32 +445,59 @@ The script automatically adds these directories to Claude's context:
 
 Project initialization script that sets up Claude configuration files.
 
-**Version:** 1.0.6
-**Purpose:** Create canonical CLAUDE.md and initialize project structure
+**Version:** 1.1.0
+**Purpose:** Initialize or update project with Claude Code configuration
 
 **Usage:**
 ```bash
-cd /path/to/project
-/ai/scripts/claude/claude.init
+claude.init [OPTIONS] [project_dir]
 ```
 
+**Options:**
+- `-h, --help` — Show help
+- `-V, --version` — Show version
+- `-v, --verbose` — Increase verbosity
+- `-q, --quiet` — Suppress messages
+- `-u, --claude-update` — Run `claude update` first
+- `-C, --clobber` — Overwrite existing files without prompting
+
 **What It Does:**
-1. Updates Claude to latest version (`sudo claude update`)
-2. Creates `.gudang` directory for project data
-3. Creates BASH-CODING-STANDARD.md symlink to `/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md`
-4. Initializes or appends to CLAUDE.md with canonical configuration
-5. Updates .gitignore with appropriate entries
-6. Launches `claude.x -T leet`
+1. Creates/updates enterprise policy (`/etc/claude-code/CLAUDE.md`)
+2. Creates project `CLAUDE.md` from template
+3. Creates `BASH-CODING-STANDARD.md` symlink
+4. Updates `.gitignore` with Claude-related entries
 
-**Interactive Prompts:**
-- Confirms appending to existing CLAUDE.md
-- Confirms initialization in new directories
+**Clobber Mode (`-C`):**
 
-**Files Created/Modified:**
-- `CLAUDE.md` - Project-specific instructions for Claude
-- `.gudang/` - Project data directory
-- `BASH-CODING-STANDARD.md` - Symlink to BCS documentation
-- `.gitignore` - Updated with CLAUDE.md, .gudang, BASH-CODING-STANDARD.md
+Without `--clobber`, the script prompts before modifying existing files:
+- Enterprise CLAUDE.md: prompts if differs from template
+- Project CLAUDE.md: prompts to append if exists
+- BCS symlink: skips if exists
+
+With `--clobber`, existing files are overwritten without prompting:
+- Enterprise CLAUDE.md: overwrites
+- Project CLAUDE.md: replaces (not appends)
+- BCS symlink: recreates
+- `.gitignore`: unchanged (append-only is correct)
+
+**Examples:**
+```bash
+# Initialize current directory (interactive)
+claude.init
+
+# Initialize specific directory
+claude.init /path/to/project
+
+# Force overwrite all configs
+claude.init --clobber
+
+# Update claude first, then init with clobber
+claude.init -Cu /path/to/project
+```
+
+**Permissions Set:**
+- Enterprise: 664, root:claude-users
+- Project files: 644
 
 **See also:** [docs/claude.init.md](./docs/claude.init.md)
 
@@ -961,7 +988,7 @@ The `skills/` directory contains comprehensive documentation for building Claude
 ├── LICENSE                            # License file
 │
 ├── claude.x                           # Main wrapper script (v1.2.0)
-├── claude.init                        # Project initialization (v1.0.6)
+├── claude.init                        # Project initialization (v1.1.0)
 ├── claude.update                      # Update wrapper (v1.3.0)
 ├── claude.cascade                     # CLAUDE.md hierarchy viewer (v1.2.0)
 ├── claude.fix-permissions             # Permission fixer (v1.4.0)
@@ -1326,7 +1353,7 @@ See [LICENSE](./LICENSE) file in the repository root.
 
 ---
 
-**Version:** 2.5.0
+**Version:** 2.6.0
 **Last Updated:** 2026-01-11
 
 #fin
