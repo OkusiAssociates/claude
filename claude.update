@@ -6,7 +6,7 @@ set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
 ### VERSION
-declare -r VERSION=1.3.0
+declare -r VERSION=1.4.0
 ###
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
@@ -14,14 +14,20 @@ declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
 
 # Color output
 if [[ -t 2 ]]; then
-  declare -r RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+  declare -r RED=$'\033[0;31m' YELLOW=$'\033[1;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
 else
-  declare -r RED='' CYAN='' NC=''
+  declare -r RED='' YELLOW='' CYAN='' NC=''
 fi
 
 info() { >&2 echo "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
+warn() { >&2 echo "$SCRIPT_NAME: ${YELLOW}▲${NC} $*"; }
 error() { >&2 echo "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
 die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
+
+# Compare versions: returns 0 if $1 > $2
+version_gt() {
+  [[ "$1" != "$2" ]] && [[ "$1" == "$(printf '%s\n%s' "$1" "$2" | sort -V | tail -1)" ]]
+}
 
 declare -r SYSTEM_CLAUDE=${SYSTEM_CLAUDE:-/usr/local/bin/claude}
 declare -r NATIVE_DIR="$HOME"/.local/share/claude
@@ -102,6 +108,20 @@ main() {
 
     if [[ -x "$new_binary" ]]; then
       info "New version downloaded: $new_version"
+
+      # Extract version number from current (e.g., "2.1.3 (Claude Code)" -> "2.1.3")
+      local -- current_ver_num
+      current_ver_num=${current_version%% *}
+
+      # Prevent downgrades
+      if ! version_gt "$new_version" "$current_ver_num"; then
+        warn "Downloaded version $new_version is not newer than installed $current_ver_num"
+        info "Skipping installation. Cleaning up..."
+        rm -rf "$NATIVE_DIR" || :
+        rm -f "$NATIVE_BIN" || :
+        info "Already at latest version: $current_version"
+        return 0
+      fi
 
       # Copy to system location (needs sudo)
       info "Installing to $SYSTEM_CLAUDE (requires sudo)..."
