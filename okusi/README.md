@@ -39,16 +39,20 @@ Setup scripts for deploying Claude Code enterprise configuration across Okusi ne
 
 | Script | Version | Purpose |
 |--------|---------|---------|
-| `claude.setup-machine` | 1.3.0 | Enterprise setup (groups, dirs, templates, marketplaces, MCP) |
-| `claude.add-user` | 1.1.0 | Add user to claude-users group |
-| `claude.fix-permissions` | 1.3.0 | Reset permissions on enterprise or user directories |
-| `claude.cascade` | 1.0.0 | Display CLAUDE.md hierarchy |
+| `claude.setup-machine` | 1.5.0 | Enterprise setup (groups, dirs, templates, MCP) |
+| `claude.add-user` | 1.5.0 | Add user to claude-users group |
+
+**Utilities** (in parent directory):
+| Script | Version | Purpose |
+|--------|---------|---------|
+| `claude.fix-permissions` | 1.4.0 | Reset permissions on enterprise or user directories |
+| `claude.cascade` | 1.2.0 | Display CLAUDE.md hierarchy |
 
 ## Templates
 
 | Template | Deploys To |
 |----------|------------|
-| `.claude.template-enterprize/` | `/etc/claude-code/.claude/` |
+| `.claude.template-enterprise/` | `/etc/claude-code/.claude/` |
 | `.claude.template-user/` | `~/.claude/` (via `--init-config`) |
 | `CLAUDE.md.enterprise.template` | `/etc/claude-code/CLAUDE.md` |
 | `settings.json.template` | Reference for user settings |
@@ -66,7 +70,8 @@ Setup scripts for deploying Claude Code enterprise configuration across Okusi ne
 **User Permissions** (`~/.claude/`):
 - Directories: `755` (rwxr-xr-x)
 - Files: `644` (rw-r--r--)
-- Owner: `USER:USER`
+- Credentials: `600`
+- Owner: `USER:PRIMARY_GROUP`
 
 **MCP Server** (`/etc/claude-code/managed-mcp.json`):
 ```json

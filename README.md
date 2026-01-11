@@ -308,30 +308,20 @@ Claude Code supports plugins for extended functionality. Plugins are managed in 
 
 ### Prerequisites
 
-- **Node.js LTS** (v22.x or higher)
-- **npm** configured for global packages
-- **Claude Code CLI** installed
+- **Claude Code CLI** (native binary or npm)
 - **Python 3.12+** (for SDK examples)
+- **Node.js 22.x LTS** (optional, for npm installation)
 
 ### Quick Install
 
 ```bash
-# 1. Install Node.js LTS
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# 2. Configure npm for global packages (no sudo required)
-mkdir -p ~/.npm-global
-npm config set prefix '~/.npm-global'
-echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+# Native binary installation (recommended)
+curl -fsSL https://claude.ai/install.sh | bash
 source ~/.bashrc
-
-# 3. Install Claude Code
-npm install -g @anthropic-ai/claude-code
 claude --version
 
-# 4. Clone/access this repository
-cd /ai/scripts/claude
+# Alternative: npm installation
+npm install -g @anthropic-ai/claude-code
 ```
 
 For detailed installation instructions, see [claude-install.md](./claude-install.md).
@@ -455,7 +445,7 @@ The script automatically adds these directories to Claude's context:
 
 Project initialization script that sets up Claude configuration files.
 
-**Version:** 1.0.3
+**Version:** 1.0.6
 **Purpose:** Create canonical CLAUDE.md and initialize project structure
 
 **Usage:**
@@ -490,7 +480,7 @@ cd /path/to/project
 
 Simple wrapper for updating Claude Code CLI.
 
-**Version:** 1.0.0
+**Version:** 1.3.0
 **Purpose:** Update Claude CLI to latest version
 
 **Usage:**
@@ -511,7 +501,7 @@ All arguments are passed directly to `sudo claude update`.
 
 Utility script to display the CLAUDE.md memory file cascade for any directory.
 
-**Location:** `/usr/local/bin/claude.cascade`
+**Version:** 1.2.0
 **Purpose:** Visualize the hierarchical loading of CLAUDE.md files
 
 **Usage:**
@@ -561,6 +551,34 @@ claude.cascade /ai/scripts/myproject
 # Useful for debugging which rules are active
 claude.cascade ~/work/client-project
 ```
+
+---
+
+### claude.fix-permissions
+
+Reset permissions on Claude Code directories.
+
+**Version:** 1.4.0
+**Purpose:** Fix ownership and permissions on enterprise or user directories
+
+**Usage:**
+```bash
+# Fix enterprise permissions
+sudo ./claude.fix-permissions
+
+# Fix specific user's directory
+sudo ./claude.fix-permissions --user USERNAME
+
+# Dry run
+sudo ./claude.fix-permissions --dry-run
+```
+
+**Permissions Applied:**
+
+| Scope | Directories | Files | Credentials | Ownership |
+|-------|-------------|-------|-------------|-----------|
+| Enterprise | 2775 (setgid) | 664 | — | root:claude-users |
+| User | 755 | 644 | 600 | USER:PRIMARY_GROUP |
 
 ---
 
@@ -943,12 +961,13 @@ The `skills/` directory contains comprehensive documentation for building Claude
 ├── LICENSE                            # License file
 │
 ├── claude.x                           # Main wrapper script (v1.2.0)
-├── claude.init                        # Project initialization (v1.0.3)
-├── claude.update                      # Update wrapper (v1.0.0)
+├── claude.init                        # Project initialization (v1.0.6)
+├── claude.update                      # Update wrapper (v1.3.0)
+├── claude.cascade                     # CLAUDE.md hierarchy viewer (v1.2.0)
+├── claude.fix-permissions             # Permission fixer (v1.4.0)
 ├── claude-install.md                  # Installation guide
 │
 ├── CLAUDE.canonical.md                # Canonical config template
-├── CLAUDE.user.md                     # Symlink to ~/.claude/CLAUDE.md
 ├── .bash_completion                   # Bash completion support
 │
 ├── agents/                            # Agent utilities
@@ -1307,7 +1326,7 @@ See [LICENSE](./LICENSE) file in the repository root.
 
 ---
 
-**Version:** 2.4.0
-**Last Updated:** 2026-01-06
+**Version:** 2.5.0
+**Last Updated:** 2026-01-11
 
 #fin
