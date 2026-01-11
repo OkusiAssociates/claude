@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #shellcheck disable=SC2015
-# Create canonical CLAUDE.md in current directory
+# claude.init - Initialize project for Claude Code
+# Usage: claude.init [OPTIONS] [project_dir]
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-declare -r VERSION=1.0.8
+declare -r VERSION=1.0.9
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
 declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
@@ -34,34 +35,34 @@ fi
 version() { echo "$SCRIPT_NAME $VERSION"; }
 
 show_help() {
-  local -- project_dir=${PROJECT_DIR:-"$PWD"}
   cat <<HELP
-$(version) - Standard Project Repo Initialization
+$SCRIPT_NAME $VERSION - Initialize project for Claude Code
 
-Creates canonical claude project directory, adds/updates files:
+USAGE
+    $SCRIPT_NAME [OPTIONS] [project_dir]
 
-  $CLAUDE_ETC_MD
-  $project_dir/CLAUDE.md
-  $project_dir/BASH-CODING-STANDARD.md
-  $project_dir/.gitignore
+OPTIONS
+    -h, --help          Show this help
+    -V, --version       Show version
+    -v, --verbose       Increase verbosity
+    -q, --quiet         Suppress messages
+    -u, --claude-update Run 'claude update' first
 
-Usage: $SCRIPT_NAME [-u|--claude-update] [project_dir]
+DESCRIPTION
+    Initializes a project directory with Claude Code configuration:
+    - Creates/updates enterprise policy ($CLAUDE_ETC_MD)
+    - Creates project CLAUDE.md from template
+    - Creates BASH-CODING-STANDARD.md symlink
+    - Updates .gitignore with Claude-related entries
 
-If omitted, project_dir defaults to current directory.
+    Permissions set:
+    - Enterprise: 664, root:$CLAUDE_GROUP
+    - Project files: 644
 
-Configurable Envvars showing current defaults:
-
-  PROJECT_DIR=$project_dir
-  CLAUDE_ETC_MD=$CLAUDE_ETC_MD
-  CLAUDE_PROJECT_MD=$CLAUDE_PROJECT_MD
-  BCS_TIER_FILE=$BCS_TIER_FILE
-  CLAUDE_UPDATE=$CLAUDE_UPDATE
-  CLAUDE_X_AGENT=$CLAUDE_X_AGENT
-  CLAUDE_GROUP=$CLAUDE_GROUP
-
-Available Agents:
-
-$(find "$SCRIPT_DIR"/agents/ -maxdepth 2 -type l -executable -exec basename {} \; 2>/dev/null | sort | xargs -n1 echo '   ')
+ENVIRONMENT
+    PROJECT_DIR         Target directory (default: current)
+    CLAUDE_X_AGENT      Agent to suggest (default: $CLAUDE_X_AGENT)
+    CLAUDE_GROUP        Enterprise group (default: $CLAUDE_GROUP)
 
 HELP
 }
@@ -149,7 +150,7 @@ main() {
     REINIT=1
   fi
   if ! sudo diff -q "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD" >/dev/null 2>&1; then
-    warn "WARNING: ${CLAUDE_ETC_MD@Q} differs from template ${CLAUDE_ENT_MD@Q}\n"
+    warn "Enterprise CLAUDE.md differs from template"
     if yn "Update ${CLAUDE_ETC_MD@Q}?"; then
       sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
       REINIT=1
@@ -196,10 +197,8 @@ main() {
   done
   unset ignore
 
-  echo "Project directory ${PROJECT_DIR@Q} has been $( ((REINIT==0)) || echo 're-' )initialized"
-
-  declare -a args=("$CLAUDE_X_AGENT" --model opus '[--continue][--new] [...]')
-  echo "Ready to execute agent: ${args[*]}"
+  success "Project ${PROJECT_DIR@Q} $( ((REINIT==0)) && echo 'verified' || echo 'initialized' )"
+  info "Suggested: agents/$CLAUDE_X_AGENT --model opus"
 }
 
 main "$@"
