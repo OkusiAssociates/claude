@@ -10,7 +10,6 @@ cat <<'EOT'
 
   Native Binary (Recommended) - No Node.js required
   Homebrew (macOS only)
-  npm (requires Node.js 18+)
 
 EOT
 
@@ -38,9 +37,6 @@ cat <<'EOT'
 
   macOS (Homebrew):
     brew install --cask claude-code
-
-  npm (Cross-platform, requires Node.js 18+):
-    npm install -g @anthropic-ai/claude-code
 
 ◉ Updates
   claude update

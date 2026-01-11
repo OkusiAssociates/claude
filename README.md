@@ -308,20 +308,16 @@ Claude Code supports plugins for extended functionality. Plugins are managed in 
 
 ### Prerequisites
 
-- **Claude Code CLI** (native binary or npm)
+- **Claude Code CLI** (native binary)
 - **Python 3.12+** (for SDK examples)
-- **Node.js 22.x LTS** (optional, for npm installation)
 
 ### Quick Install
 
 ```bash
-# Native binary installation (recommended)
+# Native binary installation
 curl -fsSL https://claude.ai/install.sh | bash
 source ~/.bashrc
 claude --version
-
-# Alternative: npm installation
-npm install -g @anthropic-ai/claude-code
 ```
 
 For detailed installation instructions, see [claude-install.md](./claude-install.md).
@@ -1291,7 +1287,7 @@ chmod +x claude.x claude.init claude.update
 ```bash
 echo $PATH
 which claude
-npm list -g @anthropic-ai/claude-code
+claude --version
 ```
 
 ---

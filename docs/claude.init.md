@@ -482,8 +482,9 @@ sudo: claude update: command not found
 
 **Solution:**
 ```bash
-# Add to sudo PATH or install Claude globally
-sudo npm install -g @anthropic-ai/claude-code
+# Install Claude Code (native binary)
+curl -fsSL https://claude.ai/install.sh | bash
+# Or ensure /usr/local/bin is in secure_path for sudo
 ```
 
 ### CLAUDE.canonical.md Not Found
