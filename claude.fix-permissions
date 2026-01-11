@@ -1,13 +1,12 @@
 #!/bin/bash
-#shellcheck disable=SC2015 # i promise i'll be good
-# Fix permissions on Claude Code directories
-#
+#shellcheck disable=SC2015
+# claude.fix-permissions - Fix permissions on Claude Code directories
 # Usage: sudo ./claude.fix-permissions [OPTIONS]
 #
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob shift_verbose
 
-declare -r VERSION=1.3.1
+declare -r VERSION=1.4.0
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
 #shellcheck disable=SC2034
@@ -48,13 +47,15 @@ DESCRIPTION
     Resets permissions on Claude Code directories.
 
     Enterprise ($ENTERPRISE_DIR):
-    - Directories: 2775 (rwxrwsr-x) with setgid
-    - Files: 664 (rw-rw-r--)
+    - Directories: 2775 (setgid)
+    - Files: 664
+    - Shell scripts in plugins: 775
     - Ownership: root:$CLAUDE_GROUP
 
     User (~/.claude/):
-    - Directories: 755 (rwxr-xr-x)
-    - Files: 644 (rw-r--r--)
+    - Directories: 755
+    - Files: 644
+    - Credentials: 600
     - Ownership: USER:PRIMARY_GROUP
 
 EXAMPLES
