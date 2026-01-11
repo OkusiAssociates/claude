@@ -167,3 +167,4 @@ celerybeat.pid
 
 # SageMath
 *.sage.py
+System-Analysis_Claude-Code-Deployment-Toolkit.md
