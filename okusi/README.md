@@ -2,28 +2,13 @@
 
 Setup scripts for deploying Claude Code enterprise configuration across Okusi network servers.
 
+See [parent README](../README.md#enterprise-configuration) for architecture details, CLAUDE.md hierarchy, settings system, and MCP integration.
+
 ## Architecture
 
 **Two-Tier Model**:
-1. **Enterprise** (`/etc/claude-code/`) — Organization-wide policies and shared resources
-2. **User** (`~/.claude/`) — Per-user configuration, created automatically
-
-```
-/etc/claude-code/                    # Enterprise (all users)
-├── CLAUDE.md                        # Enterprise policies (highest priority)
-├── managed-mcp.json                 # MCP server configuration
-└── .claude/
-    ├── agents/                      # Shared agent definitions
-    ├── commands/                    # Shared commands
-    ├── rules/                       # Enterprise rules (enforced)
-    └── plugins/                     # Shared plugin marketplaces
-
-~/.claude/                           # User (per-user, auto-created)
-├── CLAUDE.md                        # User preferences
-├── settings.json                    # User settings
-├── rules/                           # User rules
-└── ...
-```
+- **Enterprise** (`/etc/claude-code/`) — Organization-wide policies and shared resources
+- **User** (`~/.claude/`) — Per-user configuration, created automatically
 
 ## Servers Deployed
 
@@ -58,34 +43,6 @@ Setup scripts for deploying Claude Code enterprise configuration across Okusi ne
 | `settings.json.template` | Reference for user settings |
 | `managed-mcp.json.template` | `/etc/claude-code/managed-mcp.json` |
 
-## Key Configuration
-
-**Group**: `claude-users` (GID 1337 on all servers)
-
-**Enterprise Permissions** (`/etc/claude-code/`):
-- Directories: `2775` (rwxrwsr-x) with setgid
-- Files: `664` (rw-rw-r--)
-- Owner: `root:claude-users`
-
-**User Permissions** (`~/.claude/`):
-- Directories: `755` (rwxr-xr-x)
-- Files: `644` (rw-r--r--)
-- Credentials: `600`
-- Owner: `USER:PRIMARY_GROUP`
-
-**MCP Server** (`/etc/claude-code/managed-mcp.json`):
-```json
-{
-  "mcpServers": {
-    "customkb": {
-      "command": "uv",
-      "args": ["run", "--directory", "/ai/scripts/customkb", "python", "-m", "mcp_server.server"],
-      "env": {}
-    }
-  }
-}
-```
-
 ## Deployment
 
 ### Enterprise Setup on New Server
@@ -115,14 +72,30 @@ Options:
 ### Add User
 
 ```bash
-# Basic (user's ~/.claude/ created when they run claude)
-sudo ./claude.add-user USERNAME
+sudo ./claude.add-user USERNAME [OPTIONS]
 
-# With pre-initialized config from template
-sudo ./claude.add-user USERNAME --init-config
+Options:
+  --init-config       Initialize ~/.claude/ from template
+  --copy-oauth PATH   Copy OAuth from specified .claude.json file
+```
+
+**What it does:**
+1. Adds user to `claude-users` group
+2. Optionally initializes `~/.claude/` from template (`--init-config`)
+3. Optionally copies OAuth credentials (`--copy-oauth`)
+4. Sets `installMethod=system` in `.claude.json` (prevents CLI warnings)
+5. Creates `~/.local/bin/claude` symlink if `~/.local/bin/` exists
+
+**Examples:**
+```bash
+# Basic (user authenticates themselves)
+sudo ./claude.add-user biksu
+
+# With pre-initialized config
+sudo ./claude.add-user biksu --init-config
 
 # With shared OAuth credentials
-sudo ./claude.add-user USERNAME --copy-oauth /home/admin/.claude.json
+sudo ./claude.add-user biksu --copy-oauth /home/admin/.claude.json
 ```
 
 ### Fix Permissions
@@ -190,5 +163,10 @@ rm ~/.claude
 ```bash
 claude.cascade
 ```
+
+---
+
+**Version:** 1.1.0
+**Last Updated:** 2026-01-11
 
 #fin
