@@ -5,7 +5,7 @@
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-declare -r VERSION=1.0.9
+declare -r VERSION=1.1.0
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
 declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
@@ -22,6 +22,8 @@ declare -- BCS_TIER_FILE=${BCS_TIER_FILE:-/ai/scripts/Okusi/bash-coding-standard
 declare -- CLAUDE_X_AGENT=${CLAUDE_X_AGENT:-leet}
 
 declare -- CLAUDE_UPDATE=${CLAUDE_UPDATE:-0}
+
+declare -i CLOBBER=${CLOBBER:-0}
 
 declare -r CLAUDE_GROUP=${CLAUDE_GROUP:-claude-users}
 
@@ -47,6 +49,7 @@ OPTIONS
     -v, --verbose       Increase verbosity
     -q, --quiet         Suppress messages
     -u, --claude-update Run 'claude update' first
+    -C, --clobber       Overwrite existing files without prompting
 
 DESCRIPTION
     Initializes a project directory with Claude Code configuration:
@@ -104,9 +107,10 @@ main() {
       -q|--quiet)    VERBOSE=0 ;;
       -u|--claude-update)
                      CLAUDE_UPDATE=1 ;;
+      -C|--clobber)  CLOBBER=1 ;;
       -V|--version)  version; return 0 ;;
       -h|--help)     show_help; return 0 ;;
-      -[uvVh]*) #shellcheck disable=SC2046
+      -[uvVhC]*) #shellcheck disable=SC2046
                      set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
       -*)            die 22 "Invalid option ${1@Q} Help: $SCRIPT_NAME -h";;
       *)             [[ -z $PROJECT_DIR ]] || die 2 "Too many arguments ${1@Q} Help: $SCRIPT_NAME -h"
@@ -136,12 +140,10 @@ main() {
   fi
   cd "$PROJECT_DIR" || die 1
 
-  # Bash coding standard
-  if [[ ! -f "$PROJECT_DIR"/BASH-CODING-STANDARD.md ]]; then
-    if [[ ! -L "$PROJECT_DIR"/BASH-CODING-STANDARD.md ]]; then
-      ln -fs "$BCS_TIER_FILE" "$PROJECT_DIR"/BASH-CODING-STANDARD.md
-      REINIT=1
-    fi
+  # Bash coding standard symlink
+  if [[ ! -L "$PROJECT_DIR"/BASH-CODING-STANDARD.md ]] || ((CLOBBER)); then
+    ln -fs "$BCS_TIER_FILE" "$PROJECT_DIR"/BASH-CODING-STANDARD.md
+    REINIT=1
   fi
 
   # Init enterprise CLAUDE to /etc/claude-code/
@@ -150,33 +152,48 @@ main() {
     REINIT=1
   fi
   if ! sudo diff -q "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD" >/dev/null 2>&1; then
-    warn "Enterprise CLAUDE.md differs from template"
-    if yn "Update ${CLAUDE_ETC_MD@Q}?"; then
+    if ((CLOBBER)); then
       sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
       REINIT=1
+    else
+      warn "Enterprise CLAUDE.md differs from template"
+      if yn "Update ${CLAUDE_ETC_MD@Q}?"; then
+        sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
+        REINIT=1
+      fi
+      >&2 echo
     fi
-    >&2 echo
   fi
   sudo chown root:"$CLAUDE_GROUP" "$CLAUDE_ETC_MD"
   sudo chmod 664 "$CLAUDE_ETC_MD"
   sudo chmod 2775 "${CLAUDE_ETC_MD%/*}"
   
-  # Check if project CLAUDE.md exists
+  # Project CLAUDE.md
   if [[ -f "$PROJECT_DIR"/CLAUDE.md ]]; then
-    warn "CLAUDE.md already exists in ${PROJECT_DIR@Q}."
-    if yn 'Append canonical info?'; then
-      { echo
-        echo '---'
-        cat -s "$CLAUDE_PROJECT_MD"
-      } >> "$PROJECT_DIR"/CLAUDE.md
-      chmod 644 "$PROJECT_DIR"/CLAUDE.md
-      REINIT=1
-    fi
-  else
-    read -r -n 1 -p "Init claude in ${PROJECT_DIR@Q}? y/n "
-    if [[ ${REPLY,,} == y ]]; then
+    if ((CLOBBER)); then
       cp "$CLAUDE_PROJECT_MD" "$PROJECT_DIR"/CLAUDE.md
       chmod 644 "$PROJECT_DIR"/CLAUDE.md
+      REINIT=1
+    else
+      warn "CLAUDE.md already exists in ${PROJECT_DIR@Q}."
+      if yn 'Append canonical info?'; then
+        { echo; echo '---'; cat -s "$CLAUDE_PROJECT_MD"; } >> "$PROJECT_DIR"/CLAUDE.md
+        chmod 644 "$PROJECT_DIR"/CLAUDE.md
+        REINIT=1
+      fi
+    fi
+  else
+    if ((CLOBBER)); then
+      cp "$CLAUDE_PROJECT_MD" "$PROJECT_DIR"/CLAUDE.md
+      chmod 644 "$PROJECT_DIR"/CLAUDE.md
+      REINIT=1
+    else
+      read -r -n 1 -p "Init claude in ${PROJECT_DIR@Q}? y/n "
+      if [[ ${REPLY,,} == y ]]; then
+        cp "$CLAUDE_PROJECT_MD" "$PROJECT_DIR"/CLAUDE.md
+        chmod 644 "$PROJECT_DIR"/CLAUDE.md
+        REINIT=1
+      fi
     fi
   fi
   >&2 echo
