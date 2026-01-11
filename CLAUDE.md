@@ -9,7 +9,7 @@ This is a toolkit of wrapper scripts and utilities for Claude Code CLI that prov
 - **claude.init** (v1.1.0) - Project initialization with CLAUDE.md setup
 - **claude.update** (v1.3.0) - Claude CLI update wrapper
 - **Agent wrappers** - Symlink-based wrappers in `agents/` (leet, draa, trans, sarki)
-- **Enterprise deployment** - Okusi network deployment scripts in `okusi/`
+- **Enterprise deployment** - Enterprise deployment scripts in `enterprise/`
 - **SDK examples** - Python examples demonstrating Claude Agent SDK usage
 - **Skills documentation** - Comprehensive guides in `skills/` (11 documentation files)
 
@@ -452,9 +452,9 @@ The `skills/` directory contains comprehensive documentation for building Claude
 
 **Note**: `skills/repos/` contains skill examples but is gitignored.
 
-## Enterprise Deployment (okusi/)
+## Enterprise Deployment (enterprise/)
 
-The `okusi/` directory contains enterprise deployment scripts for Okusi network servers.
+The `enterprise/` directory contains enterprise deployment scripts.
 
 ### Deployment Scripts
 | Script | Version | Purpose |
@@ -487,12 +487,12 @@ The `okusi/` directory contains enterprise deployment scripts for Okusi network 
 ### Usage
 ```bash
 # Enterprise setup on new server
-sudo ./okusi/claude.setup-machine
+sudo ./enterprise/claude.setup-machine
 
 # Add user to Claude Code
-sudo ./okusi/claude.add-user USERNAME
-sudo ./okusi/claude.add-user USERNAME --init-config      # Pre-initialize ~/.claude/
-sudo ./okusi/claude.add-user USERNAME --copy-oauth FILE  # Share OAuth session
+sudo ./enterprise/claude.add-user USERNAME
+sudo ./enterprise/claude.add-user USERNAME --init-config      # Pre-initialize ~/.claude/
+sudo ./enterprise/claude.add-user USERNAME --copy-oauth FILE  # Share OAuth session
 
 # Fix permissions
 sudo ./claude.fix-permissions                # Enterprise directory

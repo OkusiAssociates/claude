@@ -488,7 +488,7 @@ claude.init --clobber
 claude.init -Cu /path/to/project
 ```
 
-**Note:** For enterprise setup (`/etc/claude-code/`), use `okusi/claude.setup-machine`.
+**Note:** For enterprise setup (`/etc/claude-code/`), use `enterprise/claude.setup-machine`.
 
 ---
 
@@ -995,6 +995,14 @@ The `skills/` directory contains comprehensive documentation for building Claude
 │   ├── leet                           # Leet agent
 │   ├── sarki                          # Sarki agent
 │   └── trans                          # Translation agent
+│
+├── enterprise/                        # Enterprise deployment
+│   ├── README.md                      # Enterprise setup guide
+│   ├── OKUSI.md                       # Okusi network deployment
+│   ├── claude.setup-machine           # Enterprise setup script (v1.5.0)
+│   ├── claude.add-user                # Add user script (v1.5.0)
+│   ├── .claude.template-enterprise/   # Enterprise config template
+│   └── .claude.template-user/         # User config template
 │
 ├── sdk/                               # SDK examples
 │   ├── requirements.txt               # Python dependencies

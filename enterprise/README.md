@@ -1,6 +1,6 @@
-# Okusi Network Claude Code Deployment
+# Enterprise Claude Code Deployment
 
-Setup scripts for deploying Claude Code enterprise configuration across Okusi network servers.
+Setup scripts for deploying Claude Code enterprise configuration.
 
 See [parent README](../README.md#enterprise-configuration) for architecture details, CLAUDE.md hierarchy, settings system, and MCP integration.
 
@@ -9,16 +9,6 @@ See [parent README](../README.md#enterprise-configuration) for architecture deta
 **Two-Tier Model**:
 - **Enterprise** (`/etc/claude-code/`) — Organization-wide policies and shared resources
 - **User** (`~/.claude/`) — Per-user configuration, created automatically
-
-## Servers Deployed
-
-| Server | Claude | uv | MCP | Status |
-|--------|--------|-----|-----|--------|
-| ok0 (okusi) | latest | 0.9.x | customkb | ✓ |
-| ok1 (okusi1) | latest | 0.9.x | customkb | ✓ |
-| okusi2 | latest | 0.9.x | customkb | ✓ |
-| okusi3 | latest | 0.9.x | customkb | ✓ |
-| ok0-batam | latest | 0.9.x | customkb | ✓ |
 
 ## Setup Scripts
 
@@ -49,10 +39,10 @@ See [parent README](../README.md#enterprise-configuration) for architecture deta
 
 ```bash
 # Sync scripts to server
-rsync -av /ai/scripts/claude/okusi/ SERVER:/ai/scripts/claude/okusi/
+rsync -av enterprise/ SERVER:enterprise/
 
 # Run enterprise setup
-ssh SERVER 'sudo /ai/scripts/claude/okusi/claude.setup-machine'
+ssh SERVER 'sudo enterprise/claude.setup-machine'
 ```
 
 ### Setup Script Options
@@ -89,13 +79,13 @@ Options:
 **Examples:**
 ```bash
 # Basic (user authenticates themselves)
-sudo ./claude.add-user biksu
+sudo ./claude.add-user USERNAME
 
 # With pre-initialized config
-sudo ./claude.add-user biksu --init-config
+sudo ./claude.add-user USERNAME --init-config
 
 # With shared OAuth credentials
-sudo ./claude.add-user biksu --copy-oauth /home/admin/.claude.json
+sudo ./claude.add-user USERNAME --copy-oauth /home/admin/.claude.json
 ```
 
 ### Fix Permissions
@@ -121,16 +111,6 @@ sudo ./claude.fix-permissions --dry-run
 3. **Verify setup**: Run `claude.cascade` to view the CLAUDE.md hierarchy
 4. **Check MCP**: In claude, run `/mcp` to verify server connection
 
-## Syncing Updates
-
-To sync updated scripts to all servers:
-
-```bash
-for server in ok0 ok1 okusi2 okusi3; do
-  rsync -av /ai/scripts/claude/okusi/ "$server:/ai/scripts/claude/okusi/"
-done
-```
-
 ## Troubleshooting
 
 ### Permission Denied Errors
@@ -146,9 +126,9 @@ sudo ./claude.fix-permissions --user USERNAME
 ### MCP Server Not Connecting
 
 1. Verify uv is installed: `uv --version`
-2. Check customkb exists: `ls /ai/scripts/customkb`
-3. Test MCP server: `timeout 3 uv run --directory /ai/scripts/customkb python -m mcp_server.server`
-4. Add mcp dependency if missing: `cd /ai/scripts/customkb && uv add mcp`
+2. Check MCP server directory exists
+3. Test MCP server manually
+4. Check managed-mcp.json configuration
 
 ### Legacy Symlink Warning
 
@@ -165,6 +145,8 @@ claude.cascade
 ```
 
 ---
+
+**Organization-specific deployment:** See `OKUSI.md` for Okusi network deployment details.
 
 **Version:** 1.1.0
 **Last Updated:** 2026-01-11
