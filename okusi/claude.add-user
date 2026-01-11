@@ -4,33 +4,35 @@
 # Usage: sudo ./claude.add-user USERNAME [OPTIONS]
 #
 set -euo pipefail
-shopt -s inherit_errexit extglob nullglob
+shopt -s inherit_errexit extglob nullglob shift_verbose
 
-declare -r VERSION='1.5.0'
+### VERSION
+declare -r VERSION=1.5.0
+###
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
 declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
 
 # Configuration
-declare -r CLAUDE_GROUP=claude-users
+declare -r CLAUDE_GROUP=${CLAUDE_GROUP:-claude-users}
 declare -r USER_TEMPLATE="$SCRIPT_DIR"/.claude.template-user
 
 # Colors
-if [[ -t 2 ]]; then
+if [[ -t 1 && -t 2 ]]; then
   declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[1;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
 else
   declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
 fi
 
-info()   { echo -e "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
+info()   { >&2 echo -e "$SCRIPT_NAME: ${CYAN}◉${NC} $*"; }
 status() { echo -e "$SCRIPT_NAME: ${GREEN}✓${NC} $*"; }
 warn()   { >&2 echo -e "$SCRIPT_NAME: ${YELLOW}▲${NC} $*"; }
 error()  { >&2 echo -e "$SCRIPT_NAME: ${RED}✗${NC} $*"; }
-die()    { error "$2"; exit "$1"; }
+die()    { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 
 show_help() {
-  cat <<EOF
+  cat <<HELP
 $SCRIPT_NAME $VERSION - Add user to Claude Code setup
 
 USAGE
@@ -44,7 +46,7 @@ OPTIONS
 
 DESCRIPTION
     Adds a user to the Claude Code setup:
-    1. Adds user to $CLAUDE_GROUP group
+    1. Adds user to group ${CLAUDE_GROUP@Q}
     2. Optionally copies OAuth file for shared authentication
     3. Optionally initializes ~/.claude/ from template
 
@@ -53,15 +55,15 @@ DESCRIPTION
 
 EXAMPLES
     # Add user (they'll authenticate themselves)
-    sudo $SCRIPT_NAME gary
+    sudo $SCRIPT_NAME biksu
 
     # Add user with shared OAuth (inherits existing session)
-    sudo $SCRIPT_NAME gary --copy-oauth /home/sysadmin/.claude.json
+    sudo $SCRIPT_NAME biksu --copy-oauth /home/sysadmin/.claude.json
 
     # Add user with pre-initialized config
-    sudo $SCRIPT_NAME gary --init-config
+    sudo $SCRIPT_NAME biksu --init-config
 
-EOF
+HELP
 }
 
 main() {
@@ -119,11 +121,11 @@ main() {
   # Step 2: Initialize ~/.claude/ from template (optional)
   local -- target="$user_home/.claude"
   if ((init_config)); then
-    info "Initializing $target from template..."
+    info "Initializing ${target@Q} from template..."
 
     # Check for symlink first (-L catches broken symlinks, -e does not)
     if [[ -L $target ]]; then
-      warn "Removing legacy symlink: $target"
+      warn "Removing legacy symlink ${target@Q}"
       rm "$target"
     fi
 
@@ -137,17 +139,17 @@ main() {
       find "$target" -type f -exec chmod 644 {} \;
       status "Initialized $target from template"
     else
-      warn "User template not found: $USER_TEMPLATE"
+      warn "User template not found ${USER_TEMPLATE@Q}"
       info 'User can run claude to auto-initialize ~/.claude/'
     fi
   else
     # Check for legacy symlink and warn
     if [[ -L $target ]]; then
-      warn "Legacy symlink found: $target"
-      warn "Consider removing it: rm $target"
+      warn "Legacy symlink found ${target@Q}"
+      warn "Consider removing it: rm ${target@Q}"
       warn "User will get their own ~/.claude/ when they run claude"
     elif [[ -d $target ]]; then
-      info "User already has $target"
+      info "User already has ${target@Q}"
     else
       info 'User will get ~/.claude/ when they first run claude'
     fi
@@ -158,7 +160,7 @@ main() {
   if [[ -n $oauth_source ]]; then
     info "Copying OAuth from ${oauth_source@Q}..."
     if [[ ! -f $oauth_source ]]; then
-      error "OAuth source file not found: $oauth_source"
+      error "OAuth source file not found ${oauth_source@Q}"
     else
       cp "$oauth_source" "$oauth_target"
       chown "$username":"$user_group" "$oauth_target"
@@ -216,5 +218,4 @@ main() {
 }
 
 main "$@"
-
 #fin
