@@ -13,8 +13,6 @@ declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
 
 declare -- PROJECT_DIR="${PROJECT_DIR:-}"
 
-declare -- CLAUDE_ETC_MD=/etc/claude-code/CLAUDE.md
-declare -- CLAUDE_ENT_MD=${CLAUDE_ENT_MD:-"$SCRIPT_DIR"/CLAUDE.enterprise.md}
 declare -- CLAUDE_PROJECT_MD=${CLAUDE_PROJECT_MD:-"$SCRIPT_DIR"/CLAUDE.project.md}
 
 declare -- BCS_TIER_FILE=${BCS_TIER_FILE:-/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md}
@@ -24,8 +22,6 @@ declare -- CLAUDE_X_AGENT=${CLAUDE_X_AGENT:-leet}
 declare -- CLAUDE_UPDATE=${CLAUDE_UPDATE:-0}
 
 declare -i CLOBBER=${CLOBBER:-0}
-
-declare -r CLAUDE_GROUP=${CLAUDE_GROUP:-claude-users}
 
 # Colors
 if [[ -t 1 && -t 2 ]]; then
@@ -53,19 +49,13 @@ OPTIONS
 
 DESCRIPTION
     Initializes a project directory with Claude Code configuration:
-    - Creates/updates enterprise policy ($CLAUDE_ETC_MD)
     - Creates project CLAUDE.md from template
     - Creates BASH-CODING-STANDARD.md symlink
     - Updates .gitignore with Claude-related entries
 
-    Permissions set:
-    - Enterprise: 664, root:$CLAUDE_GROUP
-    - Project files: 644
-
 ENVIRONMENT
     PROJECT_DIR         Target directory (default: current)
     CLAUDE_X_AGENT      Agent to suggest (default: $CLAUDE_X_AGENT)
-    CLAUDE_GROUP        Enterprise group (default: $CLAUDE_GROUP)
 
 HELP
 }
@@ -146,28 +136,6 @@ main() {
     REINIT=1
   fi
 
-  # Init enterprise CLAUDE to /etc/claude-code/
-  if [[ ! -f $CLAUDE_ETC_MD ]]; then
-    sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
-    REINIT=1
-  fi
-  if ! sudo diff -q "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD" >/dev/null 2>&1; then
-    if ((CLOBBER)); then
-      sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
-      REINIT=1
-    else
-      warn "Enterprise CLAUDE.md differs from template"
-      if yn "Update ${CLAUDE_ETC_MD@Q}?"; then
-        sudo cp "$CLAUDE_ENT_MD" "$CLAUDE_ETC_MD"
-        REINIT=1
-      fi
-      >&2 echo
-    fi
-  fi
-  sudo chown root:"$CLAUDE_GROUP" "$CLAUDE_ETC_MD"
-  sudo chmod 664 "$CLAUDE_ETC_MD"
-  sudo chmod 2775 "${CLAUDE_ETC_MD%/*}"
-  
   # Project CLAUDE.md
   if [[ -f "$PROJECT_DIR"/CLAUDE.md ]]; then
     if ((CLOBBER)); then

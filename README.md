@@ -458,20 +458,17 @@ claude.init [OPTIONS] [project_dir]
 - `-C, --clobber` — Overwrite existing files without prompting
 
 **What It Does:**
-1. Creates/updates enterprise policy (`/etc/claude-code/CLAUDE.md`)
-2. Creates project `CLAUDE.md` from template
-3. Creates `BASH-CODING-STANDARD.md` symlink
-4. Updates `.gitignore` with Claude-related entries
+1. Creates project `CLAUDE.md` from template
+2. Creates `BASH-CODING-STANDARD.md` symlink
+3. Updates `.gitignore` with Claude-related entries
 
 **Clobber Mode (`-C`):**
 
 Without `--clobber`, the script prompts before modifying existing files:
-- Enterprise CLAUDE.md: prompts if differs from template
 - Project CLAUDE.md: prompts to append if exists
 - BCS symlink: skips if exists
 
 With `--clobber`, existing files are overwritten without prompting:
-- Enterprise CLAUDE.md: overwrites
 - Project CLAUDE.md: replaces (not appends)
 - BCS symlink: recreates
 - `.gitignore`: unchanged (append-only is correct)
@@ -491,11 +488,7 @@ claude.init --clobber
 claude.init -Cu /path/to/project
 ```
 
-**Permissions Set:**
-- Enterprise: 664, root:claude-users
-- Project files: 644
-
-**See also:** [docs/claude.init.md](./docs/claude.init.md)
+**Note:** For enterprise setup (`/etc/claude-code/`), use `okusi/claude.setup-machine`.
 
 ---
 
@@ -1029,7 +1022,6 @@ The `skills/` directory contains comprehensive documentation for building Claude
 │
 └── docs/                              # Additional documentation
     ├── claude.x.md                    # claude.x details
-    ├── claude.init.md                 # claude.init details
     └── SDK.md                         # SDK comprehensive guide
 ```
 
@@ -1052,7 +1044,6 @@ The `skills/` directory contains comprehensive documentation for building Claude
 - `realpath` - Path resolution
 
 **Optional:**
-- `remblanks` - .gitignore cleanup in claude.init
 - `shellcheck` - Shell script linting
 - `shlock` - Session locking for agent wrappers (leet, draa)
 
@@ -1298,13 +1289,6 @@ claude --version
 cd sdk
 pip install claude-agent-sdk rich
 ```
-
----
-
-**Issue:** `remblanks: command not found` during claude.init
-**Solution:** This is optional. The script will continue without it. To fix:
-- Install remblanks utility, or
-- Manually clean .gitignore after initialization
 
 ---
 
