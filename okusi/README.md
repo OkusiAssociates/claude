@@ -63,7 +63,7 @@ sudo ./claude.setup-machine [OPTIONS]
 Options:
   -h, --help          Show help
   -V, --version       Show version
-  -i, --skip-install  Skip npm installation
+  -i, --skip-install  Skip binary check
   -p, --skip-plugins  Skip marketplace cloning
   -m, --skip-mcp      Skip MCP configuration
   -C, --clobber       Overwrite existing config files

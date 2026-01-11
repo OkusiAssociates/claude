@@ -88,7 +88,7 @@ _msg() {
 vecho() { ((VERBOSE)) || return 0; _msg "$@"; }
 info() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
 warn() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
-success() { ((VERBOSE)) || return 0; >&2 _msg "$@" || return 0; }
+success() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
 error() { >&2 _msg "$@"; }
 die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 yn() {
@@ -132,7 +132,7 @@ main() {
   if [[ ! -d "$PROJECT_DIR" ]]; then
     echo "${PROJECT_DIR@Q} does not exist."
     read -r -n1 -p "Create ${PROJECT_DIR@Q}? y/n "
-    [[ $REPLY == 'y' ]] || die 1
+    [[ ${REPLY,,} == y ]] || die 1
     echo
     REINIT=1
     mkdir -p "$PROJECT_DIR" || die 1
