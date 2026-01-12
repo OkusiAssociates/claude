@@ -1,5 +1,5 @@
 #!/bin/bash
-# run_tests.sh - Test runner for claude-agent test suite
+# run_tests.sh - Test runner for claude.agent test suite
 # shellcheck disable=SC2034
 set -euo pipefail
 shopt -s inherit_errexit
@@ -40,7 +40,7 @@ die()   { error "$*"; exit 1; }
 
 show_help() {
   cat <<EOF
-$SCRIPT_NAME $VERSION - Test runner for claude-agent
+$SCRIPT_NAME $VERSION - Test runner for claude.agent
 
 USAGE
     $SCRIPT_NAME [OPTIONS] [TEST_SUITE...]
@@ -156,7 +156,7 @@ main() {
   done
 
   echo
-  echo "${BOLD}${CYAN}claude-agent Test Suite${NC}"
+  echo "${BOLD}${CYAN}claude.agent Test Suite${NC}"
   echo "${BOLD}========================${NC}"
 
   # Run each suite

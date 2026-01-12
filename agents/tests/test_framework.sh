@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_framework.sh - Testing utilities for claude-agent test suite
+# test_framework.sh - Testing utilities for claude.agent test suite
 # shellcheck disable=SC2034
 set -euo pipefail
 shopt -s inherit_errexit
@@ -16,7 +16,7 @@ if [[ -z "${SCRIPT_DIR:-}" ]]; then
   SCRIPT_DIR=${TEST_DIR%/*}
 fi
 if [[ -z "${CLAUDE_AGENT:-}" ]]; then
-  CLAUDE_AGENT="$SCRIPT_DIR/claude-agent"
+  CLAUDE_AGENT="$SCRIPT_DIR/claude.agent"
 fi
 
 # Colors - set only if not already set (suppress readonly warnings)
@@ -52,7 +52,7 @@ declare -ga FAILED_TESTS=()
 declare -g TEST_TMPDIR=''
 
 setup_test_env() {
-  TEST_TMPDIR=$(mktemp -d -t claude-agent-test.XXXXXX)
+  TEST_TMPDIR=$(mktemp -d -t claude.agent-test.XXXXXX)
 
   # Create mock Agents.json for testing
   cat > "$TEST_TMPDIR/Agents.json" <<'EOF'
@@ -321,7 +321,7 @@ print_test_summary() {
 # Utility Functions
 # ============================================================================
 
-# Run claude-agent with test Agents.json
+# Run claude.agent with test Agents.json
 run_claude_agent() {
   local args=("$@")
 
@@ -336,11 +336,11 @@ run_claude_agent() {
     cat > run-test.sh <<WRAPPER
 #!/bin/bash
 export PATH="$TEST_TMPDIR:\$PATH"
-# Patch the AGENTS_JSON path in claude-agent
+# Patch the AGENTS_JSON path in claude.agent
 sed 's|declare -r AGENTS_JSON=.*|declare -r AGENTS_JSON="$TEST_TMPDIR/Agents.json"|' \
-  "$CLAUDE_AGENT" > "$TEST_TMPDIR/claude-agent-test"
-chmod +x "$TEST_TMPDIR/claude-agent-test"
-"$TEST_TMPDIR/claude-agent-test" "\$@"
+  "$CLAUDE_AGENT" > "$TEST_TMPDIR/claude.agent-test"
+chmod +x "$TEST_TMPDIR/claude.agent-test"
+"$TEST_TMPDIR/claude.agent-test" "\$@"
 WRAPPER
     chmod +x run-test.sh
     ./run-test.sh "${args[@]}"

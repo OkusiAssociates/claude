@@ -221,12 +221,12 @@ The repository includes specialized agent wrappers in `agents/`:
 
 ### Symlink-Based Architecture
 
-Agents use symlinks to `claude-agent` (v1.0.0), which resolves agent configuration from the symlink name:
+Agents use symlinks to `claude.agent` (v1.0.0), which resolves agent configuration from the symlink name:
 ```bash
-leet  -> claude-agent     # Resolves 'leet' from Agents.json
-draa  -> claude-agent     # Resolves 'draa' from Agents.json
-trans -> claude-agent     # Translation agent
-sarki -> claude-agent     # Sarcastic Jakarta assistant
+leet  -> claude.agent     # Resolves 'leet' from Agents.json
+draa  -> claude.agent     # Resolves 'draa' from Agents.json
+trans -> claude.agent     # Translation agent
+sarki -> claude.agent     # Sarcastic Jakarta assistant
 ```
 
 ### Agent Options

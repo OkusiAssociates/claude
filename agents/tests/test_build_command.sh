@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_build_command.sh - Tests for claude-agent build_command (isolation, BCS, agent_dir)
+# test_build_command.sh - Tests for claude.agent build_command (isolation, BCS, agent_dir)
 # shellcheck disable=SC2034
 set -euo pipefail
 shopt -s inherit_errexit

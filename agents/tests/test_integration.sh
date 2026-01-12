@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_integration.sh - Integration tests for claude-agent
+# test_integration.sh - Integration tests for claude.agent
 # shellcheck disable=SC2034
 set -euo pipefail
 shopt -s inherit_errexit

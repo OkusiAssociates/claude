@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_agent_resolution.sh - Tests for claude-agent agent resolution
+# test_agent_resolution.sh - Tests for claude.agent agent resolution
 # shellcheck disable=SC2034
 set -euo pipefail
 shopt -s inherit_errexit
@@ -101,7 +101,7 @@ test_symlink_detection() {
 }
 
 test_direct_invocation_requires_agent() {
-  # When called as 'claude-agent', should require -T flag
+  # When called as 'claude.agent', should require -T flag
   local exit_code=0
   run_claude_agent 2>&1 || exit_code=$?
   # Should exit with error when no agent specified

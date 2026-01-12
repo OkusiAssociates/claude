@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_argument_parsing.sh - Tests for claude-agent argument parsing
+# test_argument_parsing.sh - Tests for claude.agent argument parsing
 # shellcheck disable=SC2034
 set -euo pipefail
 shopt -s inherit_errexit
@@ -33,14 +33,14 @@ test_help_short_flag() {
 test_version_flag() {
   local output
   output=$(run_claude_agent -T leet --version 2>&1) || true
-  assert_contains "$output" "claude-agent"
+  assert_contains "$output" "claude.agent"
   assert_regex_match "$output" "[0-9]+\.[0-9]+\.[0-9]+"
 }
 
 test_version_short_flag() {
   local output
   output=$(run_claude_agent -T leet -V 2>&1) || true
-  assert_contains "$output" "claude-agent"
+  assert_contains "$output" "claude.agent"
 }
 
 # ============================================================================

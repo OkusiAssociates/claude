@@ -28,6 +28,7 @@ declare -a SHLOCK_ARGS=()
 declare -a CLAUDE_ARGS=()
 
 declare -ix CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
+declare -i VERBOSE=0
 
 # ============================================================================
 # Color Definitions
@@ -43,7 +44,7 @@ fi
 # Utility Functions
 # ============================================================================
 
-info()  { >&2 printf '%s: %s◉%s %s\n' "$SCRIPT_NAME" "$CYAN" "$NC" "$*"; }
+info()  { ((VERBOSE)) || return 0; >&2 printf '%s: %s◉%s %s\n' "$SCRIPT_NAME" "$CYAN" "$NC" "$*"; }
 warn()  { >&2 printf '%s: %s▲%s %s\n' "$SCRIPT_NAME" "$YELLOW" "$NC" "$*"; }
 error() { >&2 printf '%s: %s✗%s %s\n' "$SCRIPT_NAME" "$RED" "$NC" "$*"; }
 die()   { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
@@ -125,6 +126,9 @@ OPTIONS
     -s, --steal           Steal lock from existing session
     -M, --maxtokens       Set max output tokens to 64000
 
+    -v, --verbose         Increase verbosity (repeatable)
+    -q, --quiet           Suppress informational messages
+
     -l, --list            List available agents
     -S, --setup           Setup log file (requires sudo)
     -L, --show-log        Display the log file
@@ -185,6 +189,8 @@ parse_args() {
       -M|--maxtokens)
         CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
         ;;
+      -v|--verbose)  VERBOSE+=1 ;;
+      -q|--quiet)    VERBOSE=0 ;;
       -l|--list)
         list_agents
         exit 0
@@ -210,7 +216,7 @@ parse_args() {
         shift
         break
         ;;
-      -[TInscMlSLhV]*)
+      -[TInscMlSLhVvq]*)
         # Split combined short options
         #shellcheck disable=SC2046
         set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}"
