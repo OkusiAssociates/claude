@@ -988,7 +988,7 @@ The `skills/` directory contains comprehensive documentation for building Claude
 │
 ├── agents/                            # Agent utilities
 │   ├── Agents.json                    # Agent definitions (synced from dejavu2-cli)
-│   ├── sync-agents-json               # Sync utility for Agents.json
+│   ├── sync-agents-json.sh            # Sync utility for Agents.json
 │   ├── get-agent-element              # Agent config extractor
 │   ├── bcs-compliance                 # BCS compliance agent
 │   ├── draa                           # Applied Anthropology agent
@@ -1163,13 +1163,13 @@ The `Agents.json` file is automatically synced when using `.gitcommit`:
 ./.gitcommit "your commit message"
 ```
 
-This runs `agents/sync-agents-json` before staging files, ensuring the latest agent definitions are included in commits.
+This runs `agents/sync-agents-json.sh` before staging files, ensuring the latest agent definitions are included in commits.
 
 **Manual sync:**
 
 ```bash
 # Sync from dejavu2-cli
-agents/sync-agents-json
+agents/sync-agents-json.sh
 ```
 
 **For end users:**
@@ -1264,7 +1264,7 @@ oknav -p 'df -h'         # Parallel execution
 **Issue:** `Agents.json not found`
 **Solution:**
 - The bundled version should be at `agents/Agents.json`
-- For developers: Sync from dejavu2-cli: `agents/sync-agents-json`
+- For developers: Sync from dejavu2-cli: `agents/sync-agents-json.sh`
 - Alternative: Update locate database to find system-wide version:
 ```bash
 sudo updatedb
