@@ -358,7 +358,7 @@ EOF
   echo "  1. Add users with: $SCRIPT_DIR/claude.add-user USERNAME"
   echo '  2. User authenticates: claude'
   echo '  3. (Optional) Copy OAuth: sudo cp ~/.claude.json /home/USER/.claude.json'
-  echo "  4. Edit MCP servers: sudo nano $ENTERPRISE_DIR/managed-mcp.json"
+  echo "  4. Edit MCP servers: sudo ${EDITOR:-nano} $ENTERPRISE_DIR/managed-mcp.json"
   echo
   echo 'User configuration:'
   echo '  Each user gets their own ~/.claude/ directory when they first run claude.'
