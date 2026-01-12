@@ -6,7 +6,7 @@ set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
 ### VERSION
-declare -r VERSION=1.5.0
+declare -r VERSION=1.6.0
 ###
 #shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -- "$0")
@@ -46,11 +46,12 @@ OPTIONS
 
 BEHAVIOR
     For system installations (/usr/local/bin/claude):
-      1. Runs 'claude update' to download latest version
-      2. Copies new binary to /usr/local/bin/claude (requires sudo)
-      3. Cleans up native installation files
-      4. Creates ~/.local/bin/claude symlink if needed (bug #17289 workaround)
-      5. Ensures installMethod=system in ~/.claude.json
+      1. Auto-escalates to root if needed
+      2. Runs 'claude update' to download latest version
+      3. Installs new binary to /usr/local/bin/claude
+      4. Cleans up native installation files
+      5. Creates ~/.local/bin/claude symlink if needed (bug workaround)
+      6. Ensures installMethod=system in ~/.claude.json
 
     For native installations:
       Runs 'claude update' normally
@@ -74,6 +75,11 @@ main() {
     # Native installation - just run update normally
     claude update "$@"
     return $?
+  fi
+
+  # Auto-escalate to root for system installations
+  if ((EUID != 0)); then
+    exec sudo "$0" "$@"
   fi
 
   info "System installation detected at ${SYSTEM_CLAUDE@Q}"
@@ -123,10 +129,10 @@ main() {
         return 0
       fi
 
-      # Install to system location (needs sudo)
+      # Install to system location
       # Using 'install' instead of 'cp' handles busy executables
-      info "Installing to $SYSTEM_CLAUDE (requires sudo)..."
-      sudo install -m 755 -o root -g root "$new_binary" "$SYSTEM_CLAUDE" \
+      info "Installing to $SYSTEM_CLAUDE..."
+      install -m 755 -o root -g root "$new_binary" "$SYSTEM_CLAUDE" \
         || die 1 "Failed to install to $SYSTEM_CLAUDE"
 
       info "Cleaning up native installation..."
