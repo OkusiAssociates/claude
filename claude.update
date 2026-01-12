@@ -78,8 +78,9 @@ main() {
   fi
 
   # Auto-escalate to root for system installations
-  if ((EUID != 0)); then
+  if ((EUID)); then
     exec sudo "$0" "$@"
+    exit 1 # in case exec sudo fails/falls through
   fi
 
   info "System installation detected at ${SYSTEM_CLAUDE@Q}"
