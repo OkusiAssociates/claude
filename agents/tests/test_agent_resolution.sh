@@ -114,8 +114,8 @@ test_direct_invocation_requires_agent() {
 
 test_agent_info_displayed() {
   local output
-  output=$(run_claude_agent -T leet 2>&1) || true
-  # Check stderr for info message
+  output=$(run_claude_agent -v -T leet 2>&1) || true
+  # Check stderr for info message (requires -v for verbose output)
   assert_contains "$output" "Agent:"
 }
 

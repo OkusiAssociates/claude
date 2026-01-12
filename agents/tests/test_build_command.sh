@@ -62,7 +62,7 @@ test_no_isolated_overrides_config_true() {
 
 test_isolated_info_message() {
   local output
-  output=$(run_claude_agent -T trans --isolated 2>&1) || true
+  output=$(run_claude_agent -v -T trans --isolated 2>&1) || true
   assert_contains "$output" "Isolation mode enabled"
 }
 
@@ -89,7 +89,7 @@ test_bcs_context_not_added_when_false() {
 
 test_bcs_context_info_message() {
   local output
-  output=$(run_claude_agent -T leet 2>&1) || true
+  output=$(run_claude_agent -v -T leet 2>&1) || true
   assert_contains "$output" "BCS context added"
 }
 
@@ -133,7 +133,7 @@ test_agent_dir_not_changed_when_not_isolated() {
 
 test_agent_dir_info_message() {
   local output
-  output=$(run_claude_agent -T draa 2>&1) || true
+  output=$(run_claude_agent -v -T draa 2>&1) || true
   assert_contains "$output" "Changing to agent directory"
 }
 
