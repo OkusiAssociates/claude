@@ -1,4 +1,5 @@
 # Project-specific files
+System-Analysis_Claude-Code-Deployment-Toolkit.*
 CLAUDE.md
 .claude/
 BASH-CODING-STANDARD.md
@@ -167,4 +168,3 @@ celerybeat.pid
 
 # SageMath
 *.sage.py
-System-Analysis_Claude-Code-Deployment-Toolkit.md
