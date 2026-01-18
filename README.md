@@ -736,7 +736,7 @@ Translation agent that converts foreign language content to English while preser
 agents/trans "Terjemahkan dokumen ini ke bahasa Inggris"
 
 # Translate with context preservation
-agents/trans < indonesian-doc.md > english-doc.md
+agents/trans 'Translate this into Indonesian: ' < indonesian-doc.md > english-doc.md
 ```
 
 **Usage:** `agents/trans [OPTIONS] [PROMPT]`

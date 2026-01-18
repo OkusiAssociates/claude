@@ -13,7 +13,7 @@
   - Always end scripts with '\n#fin\n' to indicate the end of script
 
 - Shell scripts:
-  - Shebang `#!/bin/bash`
+  - Shebang `#!/usr/bin/env bash`
   - Always `set -euo pipefail` at start for error handling, unless there is a good reason not to do this.
   - 2-space indentation !!important
   - Always declare variables before use; use local within functions
@@ -78,3 +78,4 @@
 - checkpoint backups are located in ~/.checkpoint/{codebase_dir}/{YYYYMMDD_hhmmss}/
 - .gudang directories should normally be ignored.
 
+#fin

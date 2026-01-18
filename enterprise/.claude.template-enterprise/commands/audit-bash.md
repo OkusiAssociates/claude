@@ -13,7 +13,7 @@ Perform a comprehensive audit of this Bash codebase targeting **Bash 5.2+ exclus
 
 If `BASH-CODING-STANDARD.md` or `@BASH-CODING-STANDARD.md` exists in the project:
 
-- Check for BCS compliance using `bcs check` command (if available)
+- Check for BCS compliance using `bcscheck` command (if available)
 - Validate against all 14 BCS sections
 - Reference specific BCS codes (format: BCS0102, BCS0205, etc.)
 - Check template compliance (minimal/basic/complete/library patterns)
@@ -275,7 +275,7 @@ Run these tools automatically:
 shellcheck -x script.sh
 
 # BCS check (if bcs command available)
-bcs check script.sh
+bcscheck script.sh
 
 # Optional: Test suite
 ./tests/run-all-tests.sh

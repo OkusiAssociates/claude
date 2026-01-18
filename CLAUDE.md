@@ -86,7 +86,7 @@ claude_cmd=(
 
 All bash scripts follow this structure (BCS requirement):
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
@@ -359,14 +359,14 @@ die() { (($#>1)) && error "${@:2}"; exit "${1:0}"; }
 ## Code Style
 
 ### Shell Scripts
-- Shebang: `#!/bin/bash`
+- Shebang: `#!/usr/bin/env bash`
 - Error handling: `set -euo pipefail`
 - Shell options: `shopt -s inherit_errexit shift_verbose extglob nullglob`
 - Indentation: 2 spaces (!!important)
 - Variable declarations: Use `declare` or `local` statements
 - Conditionals: Prefer `[[` over `[`
 - Simple conditionals: Prefer `((...)) && ...` over `if...then`
-- Integer increment: `((var+=1))` not `((var++))` (avoid non-zero exit with set -e)
+- Integer increment: NEVER use `((i++))`, `((++i))`, or `((i+=1))` - declare as integer first (`local -i`), then use standalone `i+=1`
 - End marker: `#fin` with blank linefeed
 
 ### Python
