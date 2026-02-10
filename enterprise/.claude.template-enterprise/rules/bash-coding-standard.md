@@ -4,7 +4,7 @@ All Bash scripts must adhere to the BCS standard, internally and externally. BCS
 
 ## Compliance Checking
 
-Use `bcs check <script>` to verify compliance against the standard.
+Use `bcscheck <script>` to verify compliance against the standard.
 
 ## Tier Level Determination
 

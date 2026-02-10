@@ -5,18 +5,10 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-# ============================================================================
-# Script Metadata
-# ============================================================================
-
 declare -r VERSION=1.0.0
 declare -r SCRIPT_PATH=$(realpath -e -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
 declare -r SCRIPT_NAME=${0##*/}
-
-# ============================================================================
-# Configuration
-# ============================================================================
 
 declare -r AGENTS_JSON="$SCRIPT_DIR"/Agents.json
 declare -r LOGFILE=/var/log/agents/"$SCRIPT_NAME".log
@@ -30,28 +22,16 @@ declare -a CLAUDE_ARGS=()
 declare -ix CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
 declare -i VERBOSE=0
 
-# ============================================================================
-# Color Definitions
-# ============================================================================
-
 if [[ -t 1 && -t 2 ]]; then
   declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[0;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
 else
   declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
 fi
 
-# ============================================================================
-# Utility Functions
-# ============================================================================
-
 info()  { ((VERBOSE)) || return 0; >&2 printf '%s: %s◉%s %s\n' "$SCRIPT_NAME" "$CYAN" "$NC" "$*"; }
-warn()  { >&2 printf '%s: %s▲%s %s\n' "$SCRIPT_NAME" "$YELLOW" "$NC" "$*"; }
+warn()  { ((VERBOSE)) || return 0; >&2 printf '%s: %s▲%s %s\n' "$SCRIPT_NAME" "$YELLOW" "$NC" "$*"; }
 error() { >&2 printf '%s: %s✗%s %s\n' "$SCRIPT_NAME" "$RED" "$NC" "$*"; }
 die()   { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
 
 show_version() {
   printf '%s %s\n' "$SCRIPT_NAME" "$VERSION"
@@ -59,7 +39,7 @@ show_version() {
 }
 
 list_agents() {
-  [[ -f "$AGENTS_JSON" ]] || die 1 "Agents.json not found: $AGENTS_JSON"
+  [[ -f "$AGENTS_JSON" ]] || die 1 "Agents.json not found ${AGENTS_JSON@Q}"
   printf '%sAvailable agents:%s\n' "$CYAN" "$NC"
   jq -r 'keys[]' "$AGENTS_JSON" | while IFS= read -r key; do
     local -- short_name=${key%% -*}
@@ -78,7 +58,7 @@ setup_log() {
   touch "$LOGFILE"
   chmod 666 "$LOGFILE"
   chown root:adm "$LOGFILE"
-  info "Log directory /var/log/agents (755, root:adm)"
+  info 'Log directory /var/log/agents (755, root:adm)'
   info "Log file created ${LOGFILE@Q} (666, root:adm)"
 }
 
@@ -104,7 +84,7 @@ ensure_claude_dir() {
 }
 
 show_help() {
-  cat <<EOF
+  cat <<HELP
 $SCRIPT_NAME $VERSION - Symlink-based agent launcher
 
 USAGE
@@ -153,7 +133,7 @@ EXAMPLES
 AVAILABLE AGENTS
 $(list_agents 2>/dev/null | sed 's/^/    /' || echo "    (could not load Agents.json)")
 
-EOF
+HELP
 }
 
 # ============================================================================
@@ -200,7 +180,7 @@ parse_args() {
         exit 0
         ;;
       -L|--show-log)
-        [[ -f "$LOGFILE" ]] || die 1 "Log file not found: $LOGFILE"
+        [[ -f "$LOGFILE" ]] || die 1 "Log file not found ${LOGFILE@Q}"
         cat "$LOGFILE"
         exit 0
         ;;
@@ -216,11 +196,8 @@ parse_args() {
         shift
         break
         ;;
-      -[TInscMlSLhVvq]*)
-        # Split combined short options
-        #shellcheck disable=SC2046
-        set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}"
-        ;;
+      -[TInscMlSLhVvq]?*) set -- "${1:0:2}" "-${1:2}" "${@:2}"; continue ;;
+
       -*)
         # Pass unknown options through to claude.x
         CLAUDE_ARGS+=("$1")
@@ -237,23 +214,15 @@ parse_args() {
   CLAUDE_ARGS+=("$@")
 }
 
-# ============================================================================
-# Agent Resolution
-# ============================================================================
-
 resolve_agent() {
-  [[ -f "$AGENTS_JSON" ]] || die 1 "Agents.json not found: $AGENTS_JSON"
+  [[ -f "$AGENTS_JSON" ]] || die 1 "Agents.json not found ${AGENTS_JSON@Q}"
 
   # Case-insensitive prefix match
   agent_key=$(jq -r 'keys[]' "$AGENTS_JSON" | grep -i "^$AGENT_NAME" | head -n1)
   [[ -n "$agent_key" ]] || die 1 "Agent ${AGENT_NAME@Q} not found in Agents.json"
 
-  info "Agent: $agent_key"
+  info "Agent ${agent_key@Q}"
 }
-
-# ============================================================================
-# Build Command
-# ============================================================================
 
 build_command() {
   # Add agent to claude.x command
@@ -269,7 +238,7 @@ build_command() {
   # Add isolation if enabled
   if ((isolated_flag == 1)); then
     CLAUDE_ARGS+=(--setting-sources 'project,local')
-    info "Isolation mode enabled"
+    info 'Isolation mode enabled'
   fi
 
   # Add BCS context if enabled for this agent
@@ -282,9 +251,9 @@ build_command() {
       BCS_DIR=${BCS_FILE%/data/*}
       CLAUDE_ARGS+=(--add-dir "$BCS_DIR")
       CLAUDE_ARGS+=(--append-system-prompt "Note: Full BCS is at '$BCS_FILE'.")
-      info "BCS context added: $BCS_FILE"
+      info "BCS context added ${BCS_FILE@Q}"
     else
-      warn "bcs command not found, skipping BCS context"
+      warn 'bcs command not found, skipping BCS context'
     fi
   fi
 
@@ -294,15 +263,11 @@ build_command() {
     agent_dir=$(jq -r ".\"$agent_key\".agent_dir // empty" "$AGENTS_JSON")
     if [[ -n "$agent_dir" && -d "$agent_dir" ]]; then
       ensure_claude_dir "$agent_dir"
-      info "Changing to agent directory: $agent_dir"
+      info "Changing to agent directory ${agent_dir@Q}"
       cd "$agent_dir"
     fi
   fi
 }
-
-# ============================================================================
-# Main Entry Point
-# ============================================================================
 
 main() {
   parse_args "$@"
@@ -326,11 +291,12 @@ main() {
   fi
 
   # Set terminal title
-  echo -ne "\033]0;◯ ${AGENT_NAME} .../$(basename -- "$PWD")\007"
+  if [[ -t 0 && -t 1 && -t 2 ]]; then
+    echo -ne "\033]0;◯ ${AGENT_NAME} .../$(basename -- "$PWD")\007"
+  fi
 
   # Execute via shlock
-  exec shlock "${SHLOCK_ARGS[@]}" "$lockname-$SCRIPT_NAME" -- \
-    claude.x "${CLAUDE_ARGS[@]}"
+  exec shlock "${SHLOCK_ARGS[@]}" "$lockname"-"$SCRIPT_NAME" -- claude.x "${CLAUDE_ARGS[@]}"
 }
 
 main "$@"

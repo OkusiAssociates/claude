@@ -168,3 +168,4 @@ celerybeat.pid
 
 # SageMath
 *.sage.py
+openclaw/

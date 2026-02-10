@@ -14,7 +14,7 @@ Perform a comprehensive audit of this Bash codebase targeting **Bash 5.2+ exclus
 If `BASH-CODING-STANDARD.md` or `@BASH-CODING-STANDARD.md` exists in the project:
 
 - Check for BCS compliance using `bcscheck` command (if available)
-- Validate against all 14 BCS sections
+- Validate against all 12 BCS sections
 - Reference specific BCS codes (format: BCS0102, BCS0205, etc.)
 - Check template compliance (minimal/basic/complete/library patterns)
 - Verify self-compliance for BCS-aware projects
@@ -25,14 +25,14 @@ If `BASH-CODING-STANDARD.md` or `@BASH-CODING-STANDARD.md` exists in the project
 3. Brief description comment
 4. `set -euo pipefail` (mandatory, lines 4-6)
 5. Required shopt: `shopt -s inherit_errexit shift_verbose extglob nullglob`
-6. Script metadata: `VERSION`, `SCRIPT_PATH`, `SCRIPT_DIR`, `SCRIPT_NAME` with `readonly --`
+6. Script metadata: `VERSION`, `SCRIPT_PATH`, `SCRIPT_DIR`, `SCRIPT_NAME` with `declare -r`
 7. Global variable declarations
 8. Color definitions (if terminal output)
 9. Utility functions (messaging, helpers)
 10. Business logic functions
 11. `main()` function (required for scripts >40 lines)
 12. Script invocation: `main "$@"`
-13. End marker: `#fin` (mandatory)
+13. End marker: `#fin` (mandatory for scripts only)
 
 ## 2. ShellCheck Compliance
 
@@ -61,7 +61,7 @@ shellcheck -x script.sh
 - Backticks (use `$()` instead)
 - `expr` for arithmetic
 - `eval` with user-controlled input (use `declare -n`)
-- `((i++))` with `set -e` (use `i+=1` or `((i+=1))`)
+- ALWAYS USE `i+=1`; NEVER `((i++))`, `((++i))`, `((i+=1))`
 - Function keyword: `function name()` (use `name()` only)
 - `test` or `[` (use `[[` instead)
 
@@ -152,7 +152,7 @@ yn()        # Yes/no prompts
 noarg()     # Argument validation
 ```
 
-### main() Function (BCS0111)
+### main() Function (BCS0101)
 - Required for scripts >40 lines
 - All script logic inside main()
 - Invoked as: `main "$@"`
@@ -172,11 +172,40 @@ noarg()     # Argument validation
 - Use EXIT trap for cleanup
 - Proper trap syntax: `trap cleanup EXIT`
 
-### Exit Codes (BCS0802)
-- 0: Success
-- 1: General error
-- 2: Invalid arguments
-- 3+: Specific error codes (document in script)
+### Exit Codes (BCS0602)
+
+BCS defines 25 canonical exit codes:
+
+| Code | Name | Use Case |
+|------|------|----------|
+| 0 | SUCCESS | Successful termination |
+| 1 | ERR_GENERAL | General/unspecified error |
+| 2 | ERR_USAGE | Command line usage error |
+| 3 | ERR_NOENT | No such file or directory |
+| 4 | ERR_ISDIR | Is a directory (expected file) |
+| 5 | ERR_IO | I/O error |
+| 6 | ERR_NOTDIR | Not a directory (expected dir) |
+| 7 | ERR_EMPTY | File/input is empty |
+| 8 | ERR_REQUIRED | Required argument missing |
+| 9 | ERR_RANGE | Value out of range |
+| 10 | ERR_TYPE | Wrong type/format |
+| 11 | ERR_PERM | Operation not permitted |
+| 12 | ERR_READONLY | Read-only filesystem |
+| 13 | ERR_ACCESS | Permission denied |
+| 14 | ERR_NOMEM | Out of memory |
+| 15 | ERR_NOSPC | No space left on device |
+| 16 | ERR_BUSY | Resource busy/locked |
+| 17 | ERR_EXIST | Already exists |
+| 18 | ERR_NODEP | Missing dependency |
+| 19 | ERR_CONFIG | Configuration error |
+| 20 | ERR_ENV | Environment error |
+| 21 | ERR_STATE | Invalid state/precondition |
+| 22 | ERR_INVAL | Invalid argument |
+| 23 | ERR_NETWORK | General network error |
+| 24 | ERR_TIMEOUT | Operation timed out |
+| 25 | ERR_HOST | Host unreachable/unknown |
+
+**Reserved:** 64-78 (sysexits), 126 (cannot execute), 127 (not found), 128+n (signals)
 
 ## 8. Code Style & Best Practices
 
@@ -274,7 +303,7 @@ Run these tools automatically:
 # ShellCheck (compulsory)
 shellcheck -x script.sh
 
-# BCS check (if bcs command available)
+# BCS check (if bcscheck command available)
 bcscheck script.sh
 
 # Optional: Test suite

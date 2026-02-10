@@ -1,0 +1,54 @@
+#!/bin/bash
+# browser-snapshot: Get DOM snapshot of attached Chrome tab via Clawdbot
+# Usage: browser-snapshot [--screenshot] [--url URL]
+set -euo pipefail
+
+show_help() {
+  cat <<EOF
+browser-snapshot - See the currently attached browser tab
+
+USAGE
+    browser-snapshot              # DOM snapshot (compact)
+    browser-snapshot --full       # DOM snapshot (verbose)
+    browser-snapshot --screenshot # Save screenshot to /tmp/page.png
+    browser-snapshot --url URL    # Navigate first, then snapshot
+
+REQUIREMENTS
+    - Clawdbot gateway running
+    - Chrome extension relay loaded
+    - Tab attached (click 🦞 icon, badge shows ON)
+
+EXAMPLES
+    browser-snapshot
+    browser-snapshot --screenshot && feh /tmp/page.png
+    browser-snapshot --url http://localhost:3000
+EOF
+}
+
+case "${1:-}" in
+  -h|--help)
+    show_help
+    exit 0
+    ;;
+  --screenshot)
+    clawdbot browser screenshot --profile chrome -o /tmp/page.png 2>/dev/null
+    echo "Screenshot saved: /tmp/page.png"
+    ;;
+  --url)
+    [[ -n "${2:-}" ]] || { echo "Error: --url requires a URL argument" >&2; exit 1; }
+    clawdbot browser navigate --profile chrome --url "$2" 2>/dev/null
+    sleep 1
+    clawdbot browser snapshot --profile chrome --compact 2>/dev/null
+    ;;
+  --full)
+    clawdbot browser snapshot --profile chrome 2>/dev/null
+    ;;
+  "")
+    clawdbot browser snapshot --profile chrome --compact 2>/dev/null
+    ;;
+  *)
+    echo "Unknown option: $1" >&2
+    show_help
+    exit 1
+    ;;
+esac

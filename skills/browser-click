@@ -1,0 +1,47 @@
+#!/bin/bash
+# browser-click: Click element in attached Chrome tab via Clawdbot
+# Usage: browser-click REF [--type TEXT]
+set -euo pipefail
+
+show_help() {
+  cat <<EOF
+browser-click - Interact with elements in the attached browser tab
+
+USAGE
+    browser-click REF             # Click element by ref (e.g., e3)
+    browser-click REF --type TEXT # Type text into element
+    browser-click --tabs          # List attached tabs
+
+REFS
+    Element refs come from browser-snapshot output (e.g., [ref=e3])
+    Run browser-snapshot first to see available refs.
+
+EXAMPLES
+    browser-snapshot              # See the page, note refs
+    browser-click e3              # Click the element with ref=e3
+    browser-click e5 --type "hello"  # Type into input field
+EOF
+}
+
+case "${1:-}" in
+  -h|--help)
+    show_help
+    exit 0
+    ;;
+  --tabs)
+    clawdbot browser tabs --profile chrome 2>/dev/null
+    ;;
+  "")
+    echo "Error: REF required. Run browser-snapshot to see available refs." >&2
+    exit 1
+    ;;
+  *)
+    ref=$1
+    if [[ "${2:-}" == "--type" ]]; then
+      [[ -n "${3:-}" ]] || { echo "Error: --type requires text argument" >&2; exit 1; }
+      clawdbot browser act --profile chrome --ref "$ref" --kind type --text "$3" 2>/dev/null
+    else
+      clawdbot browser act --profile chrome --ref "$ref" --kind click 2>/dev/null
+    fi
+    ;;
+esac

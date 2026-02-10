@@ -47,7 +47,7 @@ has_conversation() {
 }
 
 show_help() {
-  cat <<EOT
+  cat <<HELP
 $SCRIPT_NAME $VERSION - 'dangerous' wrapper for claude code
 
 DESCRIPTION
@@ -158,7 +158,7 @@ EXIT CODES
     0   Success
     1   Agent not found, Agents.json not found, or missing systemprompt
     22  Invalid option argument (EINVAL)
-EOT
+HELP
 }
 
 declare -ar addDirDefaultDirs=(
@@ -287,8 +287,7 @@ main() {
         break
         ;;
 
-      -[VhcnT]*) #shellcheck disable=SC2046
-        set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
+      -[VhcnTvq]?*) set -- "${1:0:2}" "-${1:2}" "${@:2}"; continue ;;
 
       -*)
         claude_cmd+=("$1")
@@ -318,24 +317,25 @@ main() {
   # If continue_flag == 0, don't add --continue (user said --new)
 
   ((${#allowedTools[@]})) \
-      && claude_cmd+=(--allowedTools "${allowedTools[@]}")
+      && claude_cmd+=(--allowedTools "${allowedTools[@]}") ||:
 
   [[ -n "$systemPrompt" ]] \
-      && claude_cmd+=(--system-prompt "$systemPrompt")
+      && claude_cmd+=(--system-prompt "$systemPrompt") ||:
 
   ((${#appendSystemPrompt[@]})) \
-      && claude_cmd+=(--append-system-prompt "${appendSystemPrompt[@]}")
+      && claude_cmd+=(--append-system-prompt "${appendSystemPrompt[@]}") ||:
 
   ((${#addDir[@]})) \
-      && claude_cmd+=(--add-dir "${addDir[@]}")
+      && claude_cmd+=(--add-dir "${addDir[@]}") ||:
 
   ((query_flag)) \
-      && claude_cmd+=(--print)
+      && claude_cmd+=(--print) ||:
 
-  ((VERBOSE)) \
-      && info "$(declare -p claude_cmd | tr '[' $'\n')" || :
+  if ((VERBOSE)); then
+    info "$(declare -p claude_cmd | tr '[' $'\n')"
+    echo -ne "\033]0;◯ ${agent_tag:-claude.x} .../$(basename -- "$PWD")\007"
+  fi
 
-  echo -ne "\033]0;◯ ${agent_tag:-claude.x} .../$(basename -- "$PWD")\007"
   exec "$(command -v claude)" "${claude_cmd[@]}"
 }
 
