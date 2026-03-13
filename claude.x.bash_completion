@@ -1,0 +1,63 @@
+#!/bin/bash
+# Bash completion for claude.x wrapper script
+
+_claude_x_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  case "$prev" in
+    -T)
+      # Agent names from Agents.json
+      local agents_json
+      agents_json="${AGENTS_JSON:-$(dirname "$(realpath "${COMP_WORDS[0]}" 2>/dev/null)")/agents/Agents.json}"
+      if [[ -f "$agents_json" ]]; then
+        local agents
+        agents=$(jq -r 'keys[]' "$agents_json" 2>/dev/null | cut -d' ' -f1)
+        COMPREPLY=($(compgen -W "$agents" -- "$cur"))
+      fi
+      return 0
+      ;;
+    --system-prompt-file|--append-system-prompt-file)
+      COMPREPLY=($(compgen -f -- "$cur"))
+      return 0
+      ;;
+    --add-dir)
+      COMPREPLY=($(compgen -d -- "$cur"))
+      return 0
+      ;;
+    --output-format|--input-format)
+      COMPREPLY=($(compgen -W "text json stream-json" -- "$cur"))
+      return 0
+      ;;
+    --allowedTools)
+      COMPREPLY=($(compgen -W "Read Write Edit Bash Glob Grep WebFetch WebSearch Task" -- "$cur"))
+      return 0
+      ;;
+  esac
+
+  if [[ "$cur" == --* ]]; then
+    COMPREPLY=($(compgen -W "\
+      --help --version --verbose --quiet \
+      --new --no-continue --continue --ollama \
+      --allowedTools --add-dir \
+      --system-prompt --system-prompt-file \
+      --append-system-prompt --append-system-prompt-file \
+      --output-format --input-format \
+      --print --debug --resume \
+    " -- "$cur"))
+    return 0
+  fi
+
+  if [[ "$cur" == -* ]]; then
+    COMPREPLY=($(compgen -W "\
+      -h -V -v -q -T -O -n -c -r \
+    " -- "$cur"))
+    return 0
+  fi
+}
+
+complete -o default -F _claude_x_completion claude.x
+
+#fin

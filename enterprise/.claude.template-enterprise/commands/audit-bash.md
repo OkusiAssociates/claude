@@ -19,20 +19,20 @@ If `BASH-CODING-STANDARD.md` or `@BASH-CODING-STANDARD.md` exists in the project
 - Check template compliance (minimal/basic/complete/library patterns)
 - Verify self-compliance for BCS-aware projects
 
-### Mandatory Script Structure (BCS0101)
-1. Shebang: `#!/usr/bin/env bash` (line 1)
+### Mandatory Script Structure (BCS0100)
+1. Bash Shebang (line 1)
 2. ShellCheck directives (if needed)
 3. Brief description comment
 4. `set -euo pipefail` (mandatory, lines 4-6)
-5. Required shopt: `shopt -s inherit_errexit shift_verbose extglob nullglob`
-6. Script metadata: `VERSION`, `SCRIPT_PATH`, `SCRIPT_DIR`, `SCRIPT_NAME` with `declare -r`
+5. Required shopt: `shopt -s inherit_errexit`
+6. Script metadata: `VERSION`, `SCRIPT_PATH`, `SCRIPT_DIR`, `SCRIPT_NAME` with `declare -r`; not all scripts will require all these variables.
 7. Global variable declarations
 8. Color definitions (if terminal output)
 9. Utility functions (messaging, helpers)
 10. Business logic functions
-11. `main()` function (required for scripts >40 lines)
+11. `main()` function (required for scripts >200 lines)
 12. Script invocation: `main "$@"`
-13. End marker: `#fin` (mandatory for scripts only)
+13. End marker: `#fin`
 
 ## 2. ShellCheck Compliance
 
@@ -47,11 +47,11 @@ shellcheck -x script.sh
 - Flag undocumented suppressions as violations
 - Check for SC2015 violations (use explicit if/then, not `&&` `||` chains)
 
-## 3. Bash 5.2+ Language Features
+## 3. Bash 5.2+ Language Features & Control Flow (BCS0500)
 
 ### Required Patterns
-- `[[ ]]` for conditionals (NOT `[ ]`)
-- `(( ))` for arithmetic (NOT `expr` or `$[]`)
+- `[[ ]]` for conditionals (BCS0501) (NOT `[ ]`)
+- `(( ))` for arithmetic/boolean (BCS0505) (NOT `expr` or `$[]`)
 - Process substitution: `< <(command)` over pipes to while loops
 - `declare -n` nameref instead of `eval` for indirection
 - `mapfile`/`readarray` for reading files into arrays
@@ -61,15 +61,15 @@ shellcheck -x script.sh
 - Backticks (use `$()` instead)
 - `expr` for arithmetic
 - `eval` with user-controlled input (use `declare -n`)
-- ALWAYS USE `i+=1`; NEVER `((i++))`, `((++i))`, `((i+=1))`
+- Increment with `declare -i count=0` then `count+=1` (NOT `((count++))`, `((++count))`, or `((count+=1))`). With `declare -i`, `+=1` performs arithmetic; without it, `+=1` is string concatenation.
 - Function keyword: `function name()` (use `name()` only)
 - `test` or `[` (use `[[` instead)
 
-## 4. Security Vulnerabilities
+## 4. Security Vulnerabilities (BCS1000)
 
 ### Critical Security Checks
 
-**Command Injection**
+**Command Injection (BCS1004)**
 - Unsafe `eval` usage with user/variable input
 - `eval` with unvalidated variable names
 - Recommend `declare -n` nameref as safe alternative
@@ -84,16 +84,16 @@ shellcheck -x script.sh
 - Missing checks: `[[ -n "$var" && "$var" != "/" && "$var" != "." ]]`
 - Wildcard usage without explicit paths: `rm *` vs `rm ./*`
 
-**SUID/SGID Scripts**
+**SUID/SGID Scripts (BCS1001)**
 - FORBIDDEN: Bash scripts must NEVER use SUID/SGID
 - Flag any setuid/setgid permissions
 
-**PATH Manipulation**
+**PATH Manipulation (BCS1002)**
 - Unsafe PATH modifications
 - Missing PATH validation
-- Recommend explicit tool paths or PATH locking
+- Recommend explicit tool paths or PATH locking where appropriate
 
-**Input Validation**
+**Input Validation (BCS1005)**
 - Unvalidated user input in critical operations
 - Missing argument validation (noarg pattern)
 - Unsanitized input in SQL/command contexts
@@ -105,43 +105,41 @@ shellcheck -x script.sh
 
 ## 5. Variable Handling & Quoting
 
-### Variable Expansion (BCS0301-0303)
+### Variable Expansion (BCS0207)
 - Default: `"$var"` (no braces unless required)
 - Use braces when: `"${var##pattern}"`, `"${var:-default}"`, `"${array[@]}"`, `"${var1}${var2}"`
-- Always quote variables in conditionals: `[[ -f "$file" ]]`
 
-### Quoting Rules (BCS0401-0402)
+### Quoting Rules (BCS0301-0303)
 - Single quotes for static strings: `info 'Processing files'`
 - Double quotes when variables needed: `info "Processing $count files"`
 - Never unquoted variables (except in very specific contexts)
 
-### Array Handling (BCS0501-0503)
+### Array Handling (BCS0206)
 - Proper array declaration: `declare -a array=()`
 - Safe iteration: `for item in "${array[@]}"; do`
 - Avoid string splitting as array simulation
 
-### Boolean Flags (BCS0205)
+### Boolean Flags (BCS0208)
 - Pattern: `declare -i FLAG=0`
-- Usage: `((FLAG)) && action`
+- Usage: `((FLAG)) && action ||:`, `((!FLAG)) || action`
 - NOT: `if [[ "$FLAG" == "1" ]]`
 
-### Readonly Variables (BCS0203)
+### Readonly Variables (BCS0205)
 - Group readonly declarations: `readonly -- VAR1 VAR2 VAR3`
 - Place after variable initialization
-- Use `--` separator
 
 ## 6. Function Organization & Design
 
-### Function Structure (BCS0601-0606)
+### Function Structure (BCS0401-0408)
 - Bottom-up organization (low-level functions first)
 - Naming: `lowercase_with_underscores`
 - Export with: `declare -fx function_name` (if needed)
 - One purpose per function
 - Clear return values (0=success, non-zero=error)
 
-### Required Utility Functions (BCS0901)
+### Required Utility Functions (BCS0703, BCS1211)
 ```bash
-_msg()      # Core messaging function
+_msg()      # Core messaging function (where appropriate)
 info()      # Info messages
 warn()      # Warnings (>&2)
 error()     # Errors (>&2)
@@ -152,23 +150,23 @@ yn()        # Yes/no prompts
 noarg()     # Argument validation
 ```
 
-### main() Function (BCS0101)
-- Required for scripts >40 lines
+### main() Function (BCS0108, BCS0403)
+- Required for scripts >200 lines
 - All script logic inside main()
 - Invoked as: `main "$@"`
 
 ## 7. Error Handling
 
-### set -e Compliance (BCS0801)
+### set -e Compliance (BCS0601)
 - `set -euo pipefail` mandatory (lines 4-6)
 - Exception: Dual-purpose scripts may conditionally set
 - Check return values explicitly when needed: `command || { error "Failed"; return 1; }`
 
-### Error Output (BCS0901)
-- Redirect at beginning: `>&2 echo "error"`
+### Error Output (BCS0702)
+- Redirect at beginning: `>&2 echo "error"` (but prefer `error()`)
 - NOT at end: `echo "error" >&2`
 
-### Trap Usage (BCS0806)
+### Trap Usage (BCS0603, BCS0110)
 - Use EXIT trap for cleanup
 - Proper trap syntax: `trap cleanup EXIT`
 
@@ -209,24 +207,72 @@ BCS defines 25 canonical exit codes:
 
 ## 8. Code Style & Best Practices
 
-### Formatting (BCS1301)
+### Formatting (BCS1201)
 - Indentation: 2 spaces (never tabs)
 - Line length: 100 characters (except URLs/paths)
 - One command per line (except simple `&&` chains)
 
-### Comments (BCS1302)
+### Comments (BCS1202)
 - Explain WHY, not WHAT
 - Document non-obvious logic
 - Comment complex regex patterns
 - Explain security-critical sections
 
-### Naming Conventions (BCS1303)
+### Naming Conventions (BCS0203, BCS0402)
 - Constants: `UPPER_CASE`
 - Functions: `lowercase_with_underscores`
 - Local variables: `lower_case`
 - Private functions: `_leading_underscore`
 
-## 9. Dual-Purpose Scripts (BCS0102)
+## 9. Command-Line Arguments (BCS0800)
+
+### Standard Parsing Pattern (BCS0801)
+- `while (($#)); do case $1 in` pattern (NOT `while [[ $# -gt 0 ]]`)
+- `noarg "$@"; shift` before capturing option values
+- `--) shift; break` for end-of-options
+- Short option bundling support via re-splitting: `-vqn` → `-v -q -n`
+- Invalid option catch-all: `-*) die 22 "Invalid option ${1@Q}"`
+
+### Version Output (BCS0802)
+- Format: `echo "$SCRIPT_NAME $VERSION"` (no "version" word)
+
+### Argument Validation (BCS0803)
+- Validate option arguments exist before `shift`
+- Validate required positional arguments after parse loop
+- Use `noarg()` helper: `(($# > 1)) || die 22 "Option ${1@Q} requires an argument"`
+
+## 10. File Operations (BCS0900)
+
+### Safe File Testing (BCS0901)
+- Always quote variables in file tests: `[[ -f "$file" ]]`
+- Use `[[ ]]` not `[ ]` for file tests
+- Include filenames in error messages: `die 3 "Not found ${file@Q}"`
+
+### Wildcard Expansion (BCS0902)
+- Always use explicit path prefix: `rm ./*` not `rm *`
+- Loop with prefix: `for file in ./*.txt; do`
+
+### Process Substitution (BCS0903)
+- Use `< <(command)` with while loops to avoid subshell variable scope loss
+
+## 11. Concurrency & Jobs (BCS1100)
+
+If the script uses background jobs or parallel execution:
+
+### Background Job Management (BCS1101)
+- Track PIDs: `command & pid=$!`
+- Store multiple PIDs in array: `pids+=($!)`
+- Clean up in trap: kill tracked PIDs on EXIT
+
+### Wait Patterns (BCS1103)
+- Always capture wait exit codes: `wait "$pid" || errors+=1`
+- Use `wait -n` (Bash 4.3+) for processing as completed
+
+### Timeout Handling (BCS1104)
+- Wrap network operations with `timeout`
+- Handle timeout exit code 124 explicitly
+
+## 12. Dual-Purpose Scripts (BCS0106, BCS0406)
 
 For scripts that can be both executed and sourced:
 
@@ -241,7 +287,7 @@ else
 fi
 ```
 
-## 10. Testing
+## 13. Testing
 
 - Test file structure and organization
 - Use of test helpers/assertions
@@ -249,7 +295,7 @@ fi
 - ShellCheck in test pipeline
 - Test isolation and cleanup
 
-## 11. Performance Issues
+## 14. Performance Issues
 
 ### Subprocess Spawning
 - Excessive command substitution `$()`
@@ -266,7 +312,7 @@ fi
 - Consider loadable builtins for performance-critical paths
 - Document why external commands are necessary
 
-## 12. FHS Compliance & Installation
+## 15. FHS Compliance & Installation
 
 For installed scripts:
 - Search paths: script dir → `/usr/local/share/` → `/usr/share/`
@@ -280,7 +326,7 @@ For each issue found:
 
 1. **Severity**: Critical/High/Medium/Low
 2. **Location**: `file.sh:line_number`
-3. **BCS Code**: Reference if applicable (e.g., BCS0102)
+3. **BCS Code**: Reference if applicable (e.g., BCS0601)
 4. **Description**: Clear explanation of the issue
 5. **Impact**: How this affects the script/system
 6. **Recommendation**: Concrete fix with Bash 5.2+ syntax
@@ -289,8 +335,8 @@ For each issue found:
 
 Provide:
 - **Overall Health Score**: X/10 with justification
-- **Top 5 Critical Issues**: Immediate attention required
-- **Quick Wins**: Low-effort, high-impact improvements
+- **Top Critical Issues**: (if any) Immediate attention required
+- **Quick Wins**: (if any) Low-effort, high-impact improvements
 - **Long-term Recommendations**: Architectural improvements
 - **ShellCheck Results**: Summary of findings
 - **BCS Compliance**: Overall compliance percentage (if applicable)
@@ -303,7 +349,7 @@ Run these tools automatically:
 # ShellCheck (compulsory)
 shellcheck -x script.sh
 
-# BCS check (if bcscheck command available)
+# BCS check (compulsory)
 bcscheck script.sh
 
 # Optional: Test suite

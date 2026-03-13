@@ -15,7 +15,11 @@ declare -- PROJECT_DIR="${PROJECT_DIR:-}"
 
 declare -- CLAUDE_PROJECT_MD=${CLAUDE_PROJECT_MD:-"$SCRIPT_DIR"/CLAUDE.project.md}
 
-declare -- BCS_TIER_FILE=${BCS_TIER_FILE:-/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md}
+declare -- BCS_FILE=${BCS_FILE:-}
+if [[ -z "$BCS_FILE" ]]; then
+  BCS_FILE=$(bcs display --file ||:)
+ [[ -n "$BCS_FILE" ]] || BCS_FILE=/usr/local/share/yatti/bash-coding-standard/data/BASH-CODING-STANDARD.md
+fi
 
 declare -- CLAUDE_X_AGENT=${CLAUDE_X_AGENT:-leet}
 
@@ -132,7 +136,7 @@ main() {
 
   # Bash coding standard symlink
   if [[ ! -L "$PROJECT_DIR"/BASH-CODING-STANDARD.md ]] || ((CLOBBER)); then
-    ln -fs "$BCS_TIER_FILE" "$PROJECT_DIR"/BASH-CODING-STANDARD.md
+    ln -fs "$BCS_FILE" "$PROJECT_DIR"/BASH-CODING-STANDARD.md
     REINIT=1
   fi
 

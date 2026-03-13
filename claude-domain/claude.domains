@@ -1,0 +1,241 @@
+#!/bin/bash
+#shellcheck disable=SC2250
+# claude.domains: Launch Claude Code in domain-specific mode
+# Symlink detection: ln -s claude.domains appliedanthropology
+set -euo pipefail
+shopt -s inherit_errexit
+
+declare -r VERSION=1.2.0
+declare -r SCRIPT_PATH=$(realpath -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
+declare -r SCRIPT_NAME=${0##*/}
+
+declare -r VECTORDBS=${VECTORDBS:-/var/lib/vectordbs}
+declare -- DOMAIN=''
+declare -- DOMAIN_DIR=''
+declare -i continue_flag=-1  # -1=auto-detect, 0=new, 1=continue
+
+# Domain name mapping (symlink name -> directory name)
+declare -A DOMAIN_MAP=(
+  [appliedanthropology]=appliedanthropology
+  [seculardharma]=seculardharma
+  [peraturan]=peraturan.go.id
+  [okusiassociates]=okusiassociates
+  [okusimail]=okusimail
+  [okusiresearch]=okusiresearch
+  [jakartapost]=jakartapost
+  [prosocial]=prosocial.world
+  [wayang]=wayang.net
+  [ollama]=ollama
+  [uv]=uv
+  [openai-docs]=openai-docs
+  [smi]=smi
+)
+
+if [[ -t 1 && -t 2 ]]; then
+  declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[0;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
+fi
+
+info()  { >&2 printf '%s: %s◉%s %s\n' "$SCRIPT_NAME" "$CYAN" "$NC" "$*"; }
+warn()  { >&2 printf '%s: %s▲%s %s\n' "$SCRIPT_NAME" "$YELLOW" "$NC" "$*"; }
+error() { >&2 printf '%s: %s✗%s %s\n' "$SCRIPT_NAME" "$RED" "$NC" "$*"; }
+die()   { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
+
+has_conversation() {
+  # Check if conversation exists for the target directory
+  # Claude stores conversations in ~/.claude/projects/<escaped-path>/
+  local -- project_dir=${DOMAIN_DIR//\//-}  # Replace / with -
+  local -- project_path="$HOME"/.claude/projects/"$project_dir"
+  [[ -d "$project_path" ]] && compgen -G "$project_path"/*.jsonl >/dev/null 2>&1
+}
+
+show_help() {
+  cat <<HELP
+Usage: $SCRIPT_NAME [OPTIONS] [-- claude-args...]
+       <domain-symlink> [OPTIONS] [-- claude-args...]
+
+Launch Claude Code in domain-specific mode, skipping ~/.claude/ user settings.
+
+OPTIONS:
+  -d, --domain DOMAIN    Specify domain (overrides symlink detection)
+  -c, --continue         Force continue previous conversation
+  -n, --new              Start fresh conversation (don't continue)
+  -l, --list             List available domains
+  -h, --help             Display this help message
+  -V, --version          Display version information
+
+EXAMPLES:
+  appliedanthropology                # Via symlink (auto-continues)
+  appliedanthropology -n             # Fresh conversation
+  appliedanthropology -c             # Force continue
+  claude.domains -d seculardharma    # Explicit domain
+  peraturan -- -p "query about law"  # Pass args to claude
+
+AVAILABLE DOMAINS:
+$(list_domains | sed 's/^/  /')
+
+SYMLINK INSTALLATION:
+  cd /usr/local/bin
+  ln -s /ai/scripts/claude/claude-domain/claude.domains appliedanthropology
+HELP
+}
+
+list_domains() {
+  local -- domain dir
+  for domain in "${!DOMAIN_MAP[@]}"; do
+    dir="$VECTORDBS"/"${DOMAIN_MAP[$domain]}"
+    if [[ -d "$dir" ]]; then
+      printf '%s%-20s%s -> %s\n' "$GREEN" "$domain" "$NC" "${DOMAIN_MAP[$domain]}"
+    else
+      printf '%s%-20s%s -> %s (missing)\n' "$RED" "$domain" "$NC" "${DOMAIN_MAP[$domain]}"
+    fi
+  done | sort
+}
+
+resolve_domain() {
+  local -- name=$1
+
+  # Check if name is in the domain map
+  if [[ -v DOMAIN_MAP[$name] ]]; then
+    DOMAIN=$name
+    DOMAIN_DIR="$VECTORDBS"/"${DOMAIN_MAP[$name]}"
+    return 0
+  fi
+
+  # Check if name matches a directory basename directly
+  local -- dir
+  for dir in "$VECTORDBS"/*/; do
+    if [[ "${dir%/}" == "$VECTORDBS"/"$name" ]]; then
+      DOMAIN=$name
+      DOMAIN_DIR=${dir%/}
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_domain_config() {
+  local -- claude_dir="$DOMAIN_DIR"/.claude
+
+  # Create .claude directory if missing
+  if [[ ! -d "$claude_dir" ]]; then
+    info "Creating ${claude_dir@Q}"
+    mkdir -p "$claude_dir"
+  fi
+
+  # Check for local CLAUDE.md
+  if [[ ! -f "$claude_dir"/CLAUDE.local.md ]]; then
+    local -- template="$SCRIPT_DIR"/domains/"$DOMAIN".md
+    if [[ -f "$template" ]]; then
+      info "Installing domain template from ${template}"
+      cp "$template" "$claude_dir"/CLAUDE.local.md
+    else
+      warn 'No CLAUDE.local.md found; using project defaults'
+    fi
+  fi
+}
+
+launch_claude() {
+  local -a claude_cmd=(--setting-sources 'project,local')
+
+  # Skip permissions when not root (like claude.x)
+  ((EUID == 0)) || claude_cmd+=(--dangerously-skip-permissions)
+
+  # Handle conversation continuation
+  if ((continue_flag == -1)); then
+    if has_conversation; then
+      claude_cmd+=(--continue)
+      info 'Continuing existing conversation'
+    else
+      info 'Starting new conversation'
+    fi
+  elif ((continue_flag == 1)); then
+    claude_cmd+=(--continue)
+    info 'Continuing (explicit)'
+  else
+    info 'Starting fresh (explicit)'
+  fi
+
+  info "Domain: $DOMAIN"
+  info "Directory: $DOMAIN_DIR"
+
+  cd "$DOMAIN_DIR"
+  exec claude "${claude_cmd[@]}" "$@"
+}
+
+parse_args() {
+  # Detect domain from symlink name
+  if [[ "$SCRIPT_NAME" != claude.domains ]]; then
+    resolve_domain "$SCRIPT_NAME" || die 1 "Unknown domain from symlink ${SCRIPT_NAME@Q}"
+  fi
+
+  while (($#)); do
+    case $1 in
+      -d|--domain)
+        shift
+        (($#)) || die 22 'Option -d requires a domain name'
+        resolve_domain "$1" || die 1 "Unknown domain ${1@Q}"
+        ;;
+      -c|--continue)
+        continue_flag=1
+        ;;
+      -n|--new|--no-continue)
+        continue_flag=0
+        ;;
+      -l|--list)
+        list_domains
+        exit 0
+        ;;
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      -V|--version)
+        printf '%s %s\n' "$SCRIPT_NAME" "$VERSION"
+        exit 0
+        ;;
+      --)
+        shift
+        break
+        ;;
+
+      -[dcnlhV]?*) # Bundled short options
+        set -- "${1:0:2}" "-${1:2}" "${@:2}"
+        continue
+        ;;
+
+      -*)
+        die 22 "Unknown option ${1@Q}"
+        ;;
+      *)
+        # Treat as domain name if not yet set
+        if [[ -z "$DOMAIN" ]]; then
+          resolve_domain "$1" || die 1 "Unknown domain ${1@Q}"
+        else
+          break
+        fi
+        ;;
+    esac
+    shift || break
+  done
+
+  # Remaining args passed to claude
+  CLAUDE_ARGS=("$@")
+}
+
+
+main() {
+  parse_args "$@"
+
+  [[ -n "$DOMAIN" ]] || die 22 'No domain specified. Use -d DOMAIN or run via symlink.'
+  [[ -d "$DOMAIN_DIR" ]] || die 1 "Domain directory not found ${DOMAIN_DIR@Q}"
+
+  ensure_domain_config
+  launch_claude "${CLAUDE_ARGS[@]}"
+}
+
+main "$@"
+#fin

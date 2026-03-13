@@ -42,8 +42,7 @@ agents/draa                  # Applied Anthropology wrapper
 
 ### Critical File Paths
 
-- **BCS Reference**: `/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.md`
-- **BCS Summary**: `/ai/scripts/Okusi/bash-coding-standard/BASH-CODING-STANDARD.summary.md` (used by agent wrappers)
+- **BCS Reference**: `/usr/local/share/yatti/BCS/data/BASH-CODING-STANDARD.md`
 - **Agent Config**: Bundled at `agents/Agents.json`, fallback via `locate -b '\Agents.json'`
 - **Canonical Template**: `CLAUDE.canonical.md` (source for project initialization)
 

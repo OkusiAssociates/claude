@@ -379,6 +379,7 @@ claude.x [OPTIONS] [PROMPT]
 
 **Options:**
 - `-T AGENT` - Load agent template (e.g., leet, trans, sarki, draa)
+- `-O, --ollama` - Launch Claude via Ollama with glm-5:cloud model
 - `-n, --new, --no-continue` - Start fresh conversation
 - `-c, --continue` - Force continue previous conversation
 - `-v, --verbose` - Increase verbosity (repeatable: -vv, -vvv)

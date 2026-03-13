@@ -1,0 +1,1295 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# insight-harvest — Extract and Categorize Claude Code Insights
+# ==============================================================================
+#
+# Harvests educational "★ Insight" blocks from Claude Code JSONL session
+# transcripts. Uses AI (Anthropic API) to categorize, title, and reformat each
+# insight, then writes indexed Markdown files to ~/.claude/insights/.
+#
+# Options:
+#   (none)           Incremental harvest (skip already-processed files)
+#   --full           Force re-scan of all transcript files
+#   --reprocess      Recategorize, retitle, and reformat all existing insights
+#   --rebuild-links  Rebuild global insight symlinks
+#   --migrate        Migrate existing insights to project-first storage (dry run)
+#   --migrate --execute  Actually execute migration
+#   --stats          Show category distribution summary
+#   --search TERM    Search across harvested insights
+#   --version, -V    Show version
+#   --help, -h       Show usage help
+#
+# Exit codes:
+#   0    Success
+#   1    General error
+#   2    Missing dependency
+#   22   Invalid option (EINVAL)
+#
+# Dependencies: jq, md5sum
+#
+# ==============================================================================
+set -euo pipefail
+shopt -s inherit_errexit shift_verbose extglob nullglob
+
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -e -- "$0")
+#shellcheck disable=SC2034
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*}
+declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
+declare -r VERSION='2.0.0'
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Colors (conditional on terminal)
+if [[ -t 2 ]]; then
+  declare -r RED=$'\033[0;31m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+else
+  declare -r RED='' CYAN='' NC=''
+fi
+
+# Directories
+declare -r PROJECTS_DIR="$HOME/.claude/projects"
+declare -r INSIGHTS_DIR="$HOME/.claude/insights"
+declare -r STATE_FILE="$INSIGHTS_DIR/state.json"
+declare -r INDEX_FILE="$INSIGHTS_DIR/index.md"
+declare -r HASHES_FILE="$INSIGHTS_DIR/hashes.list"
+
+# Categories (subdirectories under INSIGHTS_DIR)
+declare -ra CATEGORIES=(
+  bash python php javascript git mysql
+  security system web email claude-code
+  architecture general
+)
+
+# Category lookup (for O(1) validation of AI-returned categories)
+declare -A _VALID_CATS=()
+for _c in "${CATEGORIES[@]}"; do _VALID_CATS[$_c]=1; done
+unset _c
+
+# Counters
+declare -i TOTAL_NEW=0
+declare -i TOTAL_SKIPPED=0
+declare -i TOTAL_DUPES=0
+declare -i FULL_MODE=0
+declare -i NO_AI=0
+
+# Dedup hash table
+declare -A SEEN_HASHES=()
+
+# Batched state updates (file -> mtime)
+declare -A _STATE_UPDATES=()
+
+# Category count cache for next_file_number()
+declare -A _CAT_COUNTS=()
+
+# Tmpfile tracking and cleanup
+declare -a _TMPFILES=()
+cleanup() {
+  local -i rc=$?
+  trap - EXIT
+  rm -f -- "${_TMPFILES[@]}"
+  exit "$rc"
+}
+trap cleanup EXIT
+
+# ------------------------------------------------------------------------------
+# die() - Print error and exit
+# Args: exit_code [message...]
+# ------------------------------------------------------------------------------
+die() {
+  (($# > 1)) && >&2 printf '%s: %s✗%s %s\n' "$SCRIPT_NAME" "$RED" "$NC" "${*:2}"
+  exit "${1:-1}"
+}
+
+# ------------------------------------------------------------------------------
+# cmd_help() - Show usage information
+# ------------------------------------------------------------------------------
+cmd_help() {
+  cat <<EOF
+Usage: $SCRIPT_NAME [OPTION]
+
+Harvest educational insight blocks from Claude Code session transcripts.
+Uses AI (Anthropic API) to categorize, title, and reformat each insight.
+
+Storage: Real files live in {project}/.claude/insights/. General insights
+get symlinks in $INSIGHTS_DIR. Orphans (no valid project) stay in central dir.
+
+Options:
+  (none)             Incremental harvest (skip unchanged files)
+  --full             Force re-scan of all transcript files
+  --reprocess        Recategorize, retitle, and reformat all existing insights
+  --rebuild-links    Rebuild global insight symlinks from project files
+  --migrate          Migrate central insights to project-first storage (dry run)
+  --migrate --execute  Actually execute the migration
+  --stats            Show category distribution summary
+  --search TERM      Search across harvested insights
+  --version, -V      Show version
+  --help, -h         Show this help
+
+Output directory: $INSIGHTS_DIR
+State file:       $STATE_FILE
+EOF
+}
+
+# ------------------------------------------------------------------------------
+# check_deps() - Verify required commands are available
+# ------------------------------------------------------------------------------
+check_deps() {
+  local -- cmd
+  for cmd in jq md5sum; do
+    command -v "$cmd" >/dev/null || die 2 "$cmd is required but not found"
+  done
+}
+
+# ------------------------------------------------------------------------------
+# ensure_dirs() - Create output directory structure
+# ------------------------------------------------------------------------------
+ensure_dirs() {
+  local -- cat
+  for cat in "${CATEGORIES[@]}"; do
+    mkdir -p "$INSIGHTS_DIR/$cat"
+  done
+}
+
+# ------------------------------------------------------------------------------
+# init_state() - Create state.json if it doesn't exist
+# ------------------------------------------------------------------------------
+init_state() {
+  if [[ ! -f "$STATE_FILE" ]]; then
+    printf '{"lastRun":"","files":{}}\n' > "$STATE_FILE"
+  fi
+}
+
+# ------------------------------------------------------------------------------
+# load_existing_hashes() - Populate SEEN_HASHES from hashes.list file
+# Falls back to grepping insight files if hashes.list doesn't exist yet.
+# ------------------------------------------------------------------------------
+load_existing_hashes() {
+  local -- hash
+  if [[ -f "$HASHES_FILE" ]]; then
+    while IFS= read -r hash; do
+      [[ -n "$hash" ]] && SEEN_HASHES[$hash]=1
+    done < "$HASHES_FILE"
+  else
+    # Fallback: scan central files + project files from registry
+    while IFS= read -r hash; do
+      SEEN_HASHES[$hash]=1
+    done < <(grep -ohP '(?<=<!-- hash: )[a-f0-9]+' "$INSIGHTS_DIR"/*/*.md 2>/dev/null || true)
+    local -- pdir
+    for pdir in $(get_project_dirs); do
+      while IFS= read -r hash; do
+        SEEN_HASHES[$hash]=1
+      done < <(grep -ohP '(?<=<!-- hash: )[a-f0-9]+' "$pdir/.claude/insights"/*.md 2>/dev/null || true)
+    done
+    # Write hashes.list for future runs
+    if (( ${#SEEN_HASHES[@]} > 0 )); then
+      printf '%s\n' "${!SEEN_HASHES[@]}" > "$HASHES_FILE"
+    fi
+  fi
+}
+
+# ------------------------------------------------------------------------------
+# file_needs_processing() - Check if a JSONL file needs (re)processing
+# Compares current mtime against stored mtime in state.json.
+# Always returns 0 (needs processing) if FULL_MODE is set.
+# Args: filepath
+# Returns: 0 if needs processing, 1 if mtime unchanged
+# ------------------------------------------------------------------------------
+file_needs_processing() {
+  local -- filepath=$1
+  if (( FULL_MODE )); then
+    return 0
+  fi
+  local -- relpath=${filepath#"$PROJECTS_DIR/"}
+  local -- stored_mtime
+  stored_mtime=$(jq -r --arg p "$relpath" '.files[$p] // 0' "$STATE_FILE" 2>/dev/null) || stored_mtime=0
+  local -i current_mtime
+  current_mtime=$(stat -c %Y "$filepath" 2>/dev/null) || return 0
+  if (( current_mtime <= stored_mtime )); then
+    return 1
+  fi
+  return 0
+}
+
+# AI system prompt for categorization, titling, and reformatting
+read -r -d '' AI_SYSTEM_PROMPT <<'EOPROMPT' || :
+You categorize and format educational programming insights. Return a JSON object with exactly four fields:
+
+- "title": concise title, 5-10 words, no quotes or markdown
+- "category": exactly one of: bash, python, php, javascript, git, mysql, security, system, web, email, claude-code, architecture, general
+- "body": the insight text, cleaned up for clarity and consistent markdown formatting
+- "general": boolean — true if the insight is broadly applicable (language features, CLI tools, design patterns, general techniques); false if project-specific (configurations, architecture, file paths, API integrations unique to one project)
+
+Category guidance:
+- claude-code: Claude Code CLI, skills (/loop, /commit, etc), hooks, plugins, MCP, agents, prompts, AI tools and workflows
+- bash: shell scripting, BCS standard, shellcheck, bash builtins, shell patterns
+- python: Python language, pip, venv, frameworks (FastAPI, Django, etc)
+- php: PHP language, PHPCS, composer, Laravel
+- javascript: JS/TS, Node.js, npm, React, frontend frameworks
+- git: version control, commits, branches, merge/rebase workflows
+- mysql: SQL, databases, schemas, queries, migrations
+- security: authentication, encryption, vulnerabilities, TLS/SSL, credentials
+- system: Linux administration, systemd, processes, networking, filesystems
+- web: HTTP, REST APIs, Apache/nginx, HTML/CSS, web architecture
+- email: SMTP, IMAP, mail servers, email infrastructure
+- architecture: design patterns, refactoring, abstractions, software design
+- general: only if no other category fits
+
+Return ONLY valid JSON. No markdown fencing, no explanation.
+EOPROMPT
+readonly AI_SYSTEM_PROMPT
+
+# ------------------------------------------------------------------------------
+# ai_process_insight() - Categorize, title, and reformat an insight via AI
+# Uses Anthropic Messages API. Falls back to first-line title + "general"
+# category if API is unavailable or response is invalid.
+# Args: insight_text [cwd_path]
+# Stdout: JSON object with title, category, body fields
+# ------------------------------------------------------------------------------
+ai_process_insight() {
+  local -- text=$1 cwd=${2:-unknown}
+  local -- json_text json_body response result
+
+  if [[ -n "${ANTHROPIC_API_KEY:-}" ]] && (( ! NO_AI )); then
+    json_text=$(jq -Rs '.' <<< "$text")
+
+    json_body=$(jq -n \
+      --arg system "$AI_SYSTEM_PROMPT" \
+      --argjson user "$json_text" \
+      --arg cwd "$cwd" \
+      '{
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        system: ($system + "\n\nWorking directory context: " + $cwd),
+        messages: [{ role: "user", content: $user }]
+      }')
+
+    response=$(curl -s --max-time 15 \
+      -H "x-api-key: $ANTHROPIC_API_KEY" \
+      -H "anthropic-version: 2023-06-01" \
+      -H "content-type: application/json" \
+      -d "$json_body" \
+      https://api.anthropic.com/v1/messages 2>/dev/null) || response=''
+
+    result=$(jq -r '.content[0].text // empty' <<< "$response" 2>/dev/null) || result=''
+
+    # Strip markdown fences (```json ... ```) if present
+    result=${result#\`\`\`json}
+    result=${result#\`\`\`}
+    result=${result%\`\`\`}
+    result=${result#$'\n'}
+    result=${result%$'\n'}
+
+    # Validate JSON structure: must have title, category, body (general optional)
+    if [[ -n "$result" ]] && jq -e '.title and .category and .body' <<< "$result" &>/dev/null; then
+      # Validate category against known list; fall back to "general"
+      local -- ai_cat
+      ai_cat=$(jq -r '.category' <<< "$result")
+      [[ -v _VALID_CATS[$ai_cat] ]] || result=$(jq '.category = "general"' <<< "$result")
+      # Ensure general field exists (default true if missing)
+      if ! jq -e 'has("general")' <<< "$result" &>/dev/null; then
+        result=$(jq '.general = true' <<< "$result")
+      fi
+      printf '%s\n' "$result"
+      return 0
+    fi
+  fi
+
+  # Fallback: no AI available or parse failed — default general=true (safer)
+  local -- first_line=${text%%$'\n'*}
+  first_line=${first_line##\*\*}; first_line=${first_line%%\*\*}
+  (( ${#first_line} > 80 )) && first_line="${first_line:0:77}..." || :
+  jq -n --arg t "$first_line" --arg b "$text" \
+    '{ title: $t, category: "general", body: $b, general: true }'
+}
+
+# ------------------------------------------------------------------------------
+# load_api_key() - Source ANTHROPIC_API_KEY from known .env files
+# Sets ANTHROPIC_API_KEY if not already exported.
+# ------------------------------------------------------------------------------
+load_api_key() {
+  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && return 0
+  local -- envfile line
+  for envfile in /ai/scripts/customkb/.env /ai/scripts/Trans/transcribe/.env; do
+    [[ -f "$envfile" ]] || continue
+    line=$(grep -m1 '^ANTHROPIC_API_KEY=' "$envfile") || continue
+    export ANTHROPIC_API_KEY="${line#*=}"
+    [[ -n "$ANTHROPIC_API_KEY" ]] && return 0
+  done
+  return 1
+}
+
+# ------------------------------------------------------------------------------
+# next_file_number() - Get next sequential number for a category in a directory
+# Uses max-based numbering to avoid collisions with sparse file numbering.
+# Caches in _CAT_COUNTS[] keyed by dir:cat for repeated calls.
+# Args: category target_dir
+# Stdout: zero-padded number (e.g., 001)
+# ------------------------------------------------------------------------------
+next_file_number() {
+  local -- cat=$1 target_dir=$2
+  local -- cache_key="$target_dir:$cat"
+  if [[ ! -v _CAT_COUNTS[$cache_key] ]]; then
+    local -i max_num=0 num
+    local -- f base
+    # Scan {cat}-NNN.md files to find highest number
+    for f in "$target_dir/${cat}"-*.md; do
+      [[ -e "$f" ]] || continue
+      base=${f##*/}; base=${base%.md}; base=${base##*-}
+      # Strip leading zeros for arithmetic
+      num=$((10#$base)) 2>/dev/null || continue
+      (( num > max_num )) && max_num=$num || :
+    done
+    # Also check category subdirectory (for central dir compat)
+    if [[ -d "$target_dir/$cat" ]]; then
+      for f in "$target_dir/$cat"/*.md; do
+        [[ -e "$f" ]] || continue
+        base=${f##*/}; base=${base%.md}; base=${base##*-}
+        num=$((10#$base)) 2>/dev/null || continue
+        (( num > max_num )) && max_num=$num || :
+      done
+    fi
+    _CAT_COUNTS[$cache_key]=$max_num
+  fi
+  _CAT_COUNTS[$cache_key]=$(( _CAT_COUNTS[$cache_key] + 1 ))
+  printf '%03d' "${_CAT_COUNTS[$cache_key]}"
+}
+
+# ------------------------------------------------------------------------------
+# is_valid_project_path() - Check if a path is a valid project directory
+# Rejects $HOME, /tmp/*, unknown, empty, non-existent, non-writable paths.
+# Args: path
+# Returns: 0 if valid, 1 otherwise
+# ------------------------------------------------------------------------------
+is_valid_project_path() {
+  local -- p=$1
+  [[ -n "$p" && "$p" != "unknown" ]] || return 1
+  [[ "$p" == /* ]] || return 1
+  [[ -d "$p" ]] || return 1
+  [[ "$p" != "$HOME" && "$p" != /tmp && "$p" != /tmp/* ]] || return 1
+  [[ -w "$p" ]] || return 1
+}
+
+# ------------------------------------------------------------------------------
+# get_project_dirs() - Read project registry from state.json
+# Stdout: one project path per line
+# ------------------------------------------------------------------------------
+get_project_dirs() {
+  [[ -f "$STATE_FILE" ]] || return 0
+  jq -r '.projects[]? // empty' "$STATE_FILE" 2>/dev/null || true
+}
+
+# ------------------------------------------------------------------------------
+# register_project() - Add a project path to the registry in state.json
+# Args: project_path
+# ------------------------------------------------------------------------------
+register_project() {
+  local -- project_path=$1 tmp
+  [[ -f "$STATE_FILE" ]] || return 0
+  # Check if already registered (avoid duplicate jq calls)
+  if jq -e --arg p "$project_path" '.projects // [] | index($p) != null' "$STATE_FILE" &>/dev/null; then
+    return 0
+  fi
+  tmp=$(mktemp); _TMPFILES+=("$tmp")
+  jq --arg p "$project_path" '.projects = ((.projects // []) + [$p] | unique)' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+}
+
+# ------------------------------------------------------------------------------
+# link_to_global() - Create symlink in $INSIGHTS_DIR/{category}/ pointing
+# to a project insight file.
+# Args: filepath category
+# ------------------------------------------------------------------------------
+link_to_global() {
+  local -- filepath=$1 category=$2
+  local -- num global_name
+  num=$(next_file_number "$category" "$INSIGHTS_DIR/$category")
+  global_name="${category}-${num}.md"
+  ln -sf "$filepath" "$INSIGHTS_DIR/$category/$global_name"
+}
+
+# ------------------------------------------------------------------------------
+# write_insight() - Write a single insight file (project-first storage)
+# Real files go in {project}/.claude/insights/. General insights also get
+# a symlink in $INSIGHTS_DIR/{category}/. Orphans (no valid project) go
+# directly to $INSIGHTS_DIR/{category}/ as real files.
+# Args: category title body hash project session_id date is_general
+# Stdout: filename written
+# ------------------------------------------------------------------------------
+write_insight() {
+  local -- category=$1
+  local -- title=$2
+  local -- body=$3
+  local -- hash=$4
+  local -- project=$5
+  local -- session_id=$6
+  local -- date=$7
+  local -- is_general=${8:-true}
+
+  local -- num filename filepath
+
+  if is_valid_project_path "$project"; then
+    local -- target_dir="$project/.claude/insights"
+    mkdir -p "$target_dir" 2>/dev/null || :
+    num=$(next_file_number "$category" "$target_dir")
+    filename="${category}-${num}.md"
+    filepath="$target_dir/$filename"
+
+    cat > "$filepath" <<EOF
+# $title
+
+$body
+
+---
+*$project | session ${session_id:0:8} | $date*
+<!-- hash: $hash -->
+<!-- general: $is_general -->
+EOF
+
+    if [[ "$is_general" == "true" ]]; then
+      link_to_global "$filepath" "$category"
+    fi
+
+    register_project "$project"
+  else
+    # Orphan: write as real file in central dir (always globally visible)
+    num=$(next_file_number "$category" "$INSIGHTS_DIR/$category")
+    filename="${category}-${num}.md"
+    filepath="$INSIGHTS_DIR/$category/$filename"
+
+    cat > "$filepath" <<EOF
+# $title
+
+$body
+
+---
+*$project | session ${session_id:0:8} | $date*
+<!-- hash: $hash -->
+<!-- general: true -->
+EOF
+  fi
+
+  # Append hash to centralized hashes file
+  printf '%s\n' "$hash" >> "$HASHES_FILE"
+
+  printf '%s\n' "$filename"
+}
+
+# ------------------------------------------------------------------------------
+# generate_project_index() - Generate index.md for a project's insight files
+# Args: project_path
+# ------------------------------------------------------------------------------
+generate_project_index() {
+  local -- project_path=$1
+  local -- dir="$project_path/.claude/insights"
+  local -- f name title date_str
+  local -a files=()
+  local -i n=0
+
+  for f in "$dir"/*.md; do
+    [[ -f "$f" && "${f##*/}" != "index.md" ]] || continue
+    files+=("$f")
+  done
+
+  (( ${#files[@]} > 0 )) || return 0
+
+  local -- body=''
+  for f in "${files[@]}"; do
+    name=${f##*/}; name=${name%.md}
+    title=$(head -1 -- "$f" 2>/dev/null | sed 's/^# //') || title="$name"
+    body+=$(printf '%s\n' "- [$name]($name.md) — $title")
+    n+=1
+  done
+
+  date_str=$(date '+%Y-%m-%d %H:%M')
+  {
+    printf '# Project Insights\n\n'
+    printf '%d insights from this project (updated: %s)\n\n' "$n" "$date_str"
+    printf '%s\n' "$body"
+  } > "$dir/index.md"
+}
+
+# ------------------------------------------------------------------------------
+# generate_project_rule() - Generate .claude/rules/insights.md for a project
+# Creates a lightweight rule file with insight titles so Claude Code auto-loads
+# them at session start. Claude can then Read individual files when relevant.
+# Args: project_path
+# ------------------------------------------------------------------------------
+generate_project_rule() {
+  local -- project_path=$1
+  local -- insights_dir="$project_path/.claude/insights"
+  local -- rules_dir="$project_path/.claude/rules"
+  local -- rule_file="$rules_dir/insights.md"
+  local -- f name title
+  local -a files=()
+  local -i n=0
+
+  for f in "$insights_dir"/*.md; do
+    [[ -f "$f" && "${f##*/}" != "index.md" ]] || continue
+    files+=("$f")
+  done
+
+  # No insights → remove stale rule file if present
+  if (( ${#files[@]} == 0 )); then
+    [[ -f "$rule_file" ]] && rm -f -- "$rule_file"
+    return 0
+  fi
+
+  mkdir -p "$rules_dir" 2>/dev/null || return 0
+
+  local -- body=''
+  for f in "${files[@]}"; do
+    name=${f##*/}; name=${name%.md}
+    title=$(head -1 -- "$f" 2>/dev/null | sed 's/^# //') || title="$name"
+    body+="- [${name}](.claude/insights/${name}.md) — ${title}"$'\n'
+    n+=1
+  done
+
+  {
+    printf '# Project Insights\n\n'
+    printf 'This project has %d harvested insights from previous sessions.\n' "$n"
+    printf 'When a task relates to a topic below, read the insight file for context.\n\n'
+    printf '%s\n' "$body"
+  } > "$rule_file"
+}
+
+# ------------------------------------------------------------------------------
+# rebuild_global_links() - Rebuild global symlinks from project insight files
+# Scans registered project dirs, finds files with <!-- general: true -->,
+# and creates symlinks in $INSIGHTS_DIR/{category}/. Also rebuilds project
+# index/rule files and the global rule.
+# ------------------------------------------------------------------------------
+rebuild_global_links() {
+  local -- pdir file category general_marker
+  local -A seen_projects=()
+  local -i linked=0 projects=0
+
+  # Clean existing symlinks in central dir
+  local -- cat_dir
+  for cat_dir in "$INSIGHTS_DIR"/*/; do
+    [[ -d "$cat_dir" ]] || continue
+    local -- lnk
+    for lnk in "$cat_dir"*.md; do
+      [[ -L "$lnk" ]] && rm -f -- "$lnk"
+    done
+  done
+
+  # Scan project dirs from registry
+  while IFS= read -r pdir; do
+    [[ -d "$pdir/.claude/insights" ]] || continue
+    seen_projects[$pdir]=1
+    projects+=1
+
+    for file in "$pdir/.claude/insights"/*.md; do
+      [[ -f "$file" && ! -L "$file" && "${file##*/}" != "index.md" ]] || continue
+
+      # Extract category from filename (e.g., bash-003.md → bash, claude-code-016.md → claude-code)
+      category=${file##*/}
+      category=${category%.md}
+      category=${category%-[0-9]*}
+      [[ -v _VALID_CATS[$category] ]] || continue
+
+      # Check for general marker
+      general_marker=$(grep -o '<!-- general: [a-z]* -->' "$file" 2>/dev/null | head -1) || general_marker=''
+      if [[ "$general_marker" == *"true"* ]]; then
+        link_to_global "$file" "$category"
+        linked+=1
+      fi
+    done
+  done < <(get_project_dirs)
+
+  # Also count orphan real files in central dir (not symlinks)
+  local -i total_insights=0
+  local -- _f
+  for _f in "$INSIGHTS_DIR"/*/*.md; do
+    [[ -f "$_f" && ! -L "$_f" ]] && total_insights+=1
+  done
+  # Add symlinks (general project insights)
+  for _f in "$INSIGHTS_DIR"/*/*.md; do
+    [[ -L "$_f" && -e "$_f" ]] && total_insights+=1
+  done
+
+  # Generate per-project index and rule files
+  for pdir in "${!seen_projects[@]}"; do
+    generate_project_index "$pdir"
+    generate_project_rule "$pdir"
+  done
+
+  # Generate global rule file
+  generate_global_rule "$total_insights"
+
+  >&2 printf '  Global links: %d symlinks across %d projects\n' "$linked" "$projects"
+}
+
+# ------------------------------------------------------------------------------
+# generate_index() - Rebuild $INDEX_FILE from all insight files
+# Scans central dir (real files + symlinks) to build the global index.
+# Symlinks transparently read through to project files.
+# ------------------------------------------------------------------------------
+generate_index() {
+  local -i total=0 cat_count=0 n
+  local -- cat f basename name title date_line date_str
+  local -a files
+  local -- body=''
+
+  for cat in "${CATEGORIES[@]}"; do
+    files=()
+    for f in "$INSIGHTS_DIR/$cat"/*.md; do
+      # Include both real files (orphans) and symlinks (general project insights)
+      [[ -e "$f" ]] || continue
+      files+=("$f")
+    done
+    (( ${#files[@]} == 0 )) && continue
+    n=${#files[@]}
+    cat_count+=1
+    total+=$n
+    body+=$(printf '## %s (%d)\n\n' "$cat" "$n")
+    for f in "${files[@]}"; do
+      basename=${f##*/}
+      name=${basename%.md}
+      title=$(head -1 -- "$f" | sed 's/^# //')
+      date_line=$(grep -oP '\d{4}-\d{2}-\d{2}' "$f" | tail -1) || date_line="unknown"
+      body+=$(printf '%s\n' "- [$name]($cat/$basename) — $title ($date_line)")
+    done
+    body+=$'\n'
+  done
+
+  date_str=$(date '+%Y-%m-%d %H:%M')
+  {
+    printf '# Insight Archive\n\n'
+    printf '%d insights across %d categories (updated: %s)\n\n' "$total" "$cat_count" "$date_str"
+    printf '%s' "$body"
+  } > "$INDEX_FILE"
+
+  generate_global_rule "$total"
+}
+
+# ------------------------------------------------------------------------------
+# generate_global_rule() - Generate ~/.claude/rules/insights.md
+# Compact summary with category counts so Claude knows insights exist globally.
+# Args: total_count
+# ------------------------------------------------------------------------------
+generate_global_rule() {
+  local -i total=$1
+  local -- rules_dir="$HOME/.claude/rules"
+  local -- rule_file="$rules_dir/insights.md"
+  local -- cat
+  local -i n
+
+  if (( total == 0 )); then
+    [[ -f "$rule_file" ]] && rm -f -- "$rule_file"
+    return 0
+  fi
+
+  mkdir -p "$rules_dir" 2>/dev/null || return 0
+
+  local -- body=''
+  for cat in "${CATEGORIES[@]}"; do
+    n=0
+    for _ in "$INSIGHTS_DIR/$cat"/*.md; do n+=1; done
+    (( n > 0 )) || continue
+    body+="- **${cat}** ($n)"$'\n'
+  done
+
+  {
+    printf '# Insight Archive\n\n'
+    printf '%d harvested insights from previous Claude Code sessions.\n\n' "$total"
+    printf '## Categories\n\n'
+    printf '%s\n' "$body"
+    printf '## Usage\n\n'
+    printf 'Run `insight-harvest --search <term>` to find relevant insights.\n'
+    printf 'Full index: `~/.claude/insights/index.md`\n'
+  } > "$rule_file"
+}
+
+# ------------------------------------------------------------------------------
+# cmd_harvest() - Main harvest operation
+# ------------------------------------------------------------------------------
+cmd_harvest() {
+  check_deps
+  ensure_dirs
+  init_state
+  load_existing_hashes
+  if (( NO_AI )); then
+    load_api_key || :
+  else
+    load_api_key || die 2 "ANTHROPIC_API_KEY required (set in environment or .env file)"
+  fi
+
+  >&2 printf '%s◉%s Scanning %s for insight blocks...\n' "$CYAN" "$NC" "$PROJECTS_DIR"
+
+  # Local declarations for loop variables (hoisted per BCS)
+  local -a candidate_files=()
+  local -- f reldir project_dir project tmpfile
+  local -- msg_text msg_cwd msg_session msg_ts msg_date
+  local -- insights_tmp current_insight hash
+  local -- ai_result ai_title ai_category ai_body ai_general
+
+  # Step 1: Fast filter — find JSONL files containing insights
+  while IFS= read -r f; do
+    candidate_files+=("$f")
+  done < <(grep -rl '★ Insight' "$PROJECTS_DIR" --include='*.jsonl' 2>/dev/null || true)
+
+  if (( ${#candidate_files[@]} == 0 )); then
+    >&2 printf 'No insight blocks found in any session transcripts.\n'
+    generate_index
+    return 0
+  fi
+
+  >&2 printf 'Found %d files containing insights.\n' "${#candidate_files[@]}"
+
+  # Step 2: Process each candidate file
+  for f in "${candidate_files[@]}"; do
+    if ! file_needs_processing "$f"; then
+      TOTAL_SKIPPED+=1
+      continue
+    fi
+
+    >&2 printf '  Processing: %s\n' "${f#"$PROJECTS_DIR/"}"
+
+    # Extract project name from directory path
+    reldir=${f#"$PROJECTS_DIR/"}
+    project_dir=${reldir%%/*}
+    project=${project_dir//-//}  # Convert dashes back to path separators
+    project=${project#/}  # Remove leading slash
+
+    # Extract insight blocks with metadata
+    # Each assistant message may contain multiple insight blocks
+    tmpfile=$(mktemp); _TMPFILES+=("$tmpfile")
+
+    # Get all assistant messages that contain insights, with metadata
+    jq -r '
+      select(.type == "assistant") |
+      select(.message.content[]? | select(.type == "text") | .text | contains("★ Insight")) |
+      {
+        text: [.message.content[] | select(.type == "text") | .text] | join("\n"),
+        cwd: (.cwd // "unknown"),
+        session: (.sessionId // "unknown"),
+        ts: (.timestamp // "unknown")
+      } | @json
+    ' "$f" 2>/dev/null > "$tmpfile" || true
+
+    # Process each message containing insights
+    while IFS= read -r json_line; do
+      [[ -z "$json_line" ]] && continue
+
+      msg_text=$(jq -r '.text' <<< "$json_line")
+      IFS=$'\t' read -r msg_cwd msg_session msg_ts < <(jq -r '[.cwd, .session, .ts] | @tsv' <<< "$json_line")
+
+      # Extract date from timestamp
+      msg_date=${msg_ts:0:10}
+      [[ "$msg_date" == "unknown" ]] && msg_date=$(date '+%Y-%m-%d')
+
+      # Extract individual insight blocks using awk
+      insights_tmp=$(mktemp); _TMPFILES+=("$insights_tmp")
+
+      awk '
+        /★ Insight/ { capture=1; next }
+        /^`─+`$/ { if (capture) { print "---INSIGHT_BOUNDARY---"; capture=0 }; next }
+        capture { print }
+      ' <<< "$msg_text" > "$insights_tmp"
+
+      # Process each extracted insight block
+      current_insight=""
+      while IFS= read -r line; do
+        if [[ "$line" == "---INSIGHT_BOUNDARY---" ]]; then
+          if [[ -n "$current_insight" ]]; then
+            # Deduplicate
+            hash=$(printf '%s' "$current_insight" | sed 's/[[:space:]]\+/ /g' | md5sum | cut -d' ' -f1)
+
+            if [[ -v SEEN_HASHES[$hash] ]]; then
+              TOTAL_DUPES+=1
+            else
+              SEEN_HASHES[$hash]=1
+
+              # AI categorize + title + reformat in a single call
+              ai_result=$(ai_process_insight "$current_insight" "$msg_cwd")
+              ai_title=$(jq -r '.title' <<< "$ai_result")
+              ai_category=$(jq -r '.category' <<< "$ai_result")
+              ai_body=$(jq -r '.body' <<< "$ai_result")
+              ai_general=$(jq -r '.general // true' <<< "$ai_result")
+
+              # Write the insight file (project-first)
+              write_insight "$ai_category" "$ai_title" "$ai_body" "$hash" "$msg_cwd" "$msg_session" "$msg_date" "$ai_general" >/dev/null
+              TOTAL_NEW+=1
+            fi
+          fi
+          current_insight=""
+        else
+          if [[ -n "$current_insight" ]]; then
+            current_insight+=$'\n'"$line"
+          else
+            current_insight="$line"
+          fi
+        fi
+      done < "$insights_tmp"
+    done < "$tmpfile"
+
+    # Record for batched state update
+    _STATE_UPDATES["${f#"$PROJECTS_DIR/"}"]=$(stat -c %Y "$f")
+  done
+
+  # Step 3: Regenerate index and global symlinks
+  generate_index
+  rebuild_global_links
+
+  # Batched state update: all processed files + lastRun in one jq call
+  if (( ${#_STATE_UPDATES[@]} > 0 )); then
+    local -- updates_json='{' key
+    for key in "${!_STATE_UPDATES[@]}"; do
+      updates_json+="\"$key\":${_STATE_UPDATES[$key]},"
+    done
+    updates_json="${updates_json%,}}"
+    local -- now tmp
+    now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    tmp=$(mktemp); _TMPFILES+=("$tmp")
+    jq --argjson u "$updates_json" --arg t "$now" \
+      '.files += $u | .lastRun = $t' "$STATE_FILE" > "$tmp" && mv "$tmp" "$STATE_FILE"
+  fi
+
+  # Report results
+  >&2 printf '\nHarvest complete:\n'
+  >&2 printf '  New insights:  %d\n' "$TOTAL_NEW"
+  >&2 printf '  Duplicates:    %d\n' "$TOTAL_DUPES"
+  >&2 printf '  Files skipped: %d (already processed)\n' "$TOTAL_SKIPPED"
+  >&2 printf '  Index:         %s\n' "$INDEX_FILE"
+}
+
+# ------------------------------------------------------------------------------
+# cmd_stats() - Show category distribution
+# Scans project dirs (from registry) + central orphans.
+# ------------------------------------------------------------------------------
+cmd_stats() {
+  local -i total=0
+  local -i n
+  local -- cat f pdir
+  local -A cat_counts=()
+
+  # Count from registered project dirs (real files only)
+  while IFS= read -r pdir; do
+    [[ -d "$pdir/.claude/insights" ]] || continue
+    for f in "$pdir/.claude/insights"/*.md; do
+      [[ -f "$f" && ! -L "$f" && "${f##*/}" != "index.md" ]] || continue
+      cat=${f##*/}; cat=${cat%.md}; cat=${cat%-[0-9]*}
+      [[ -v _VALID_CATS[$cat] ]] || continue
+      cat_counts[$cat]=$(( ${cat_counts[$cat]:-0} + 1 ))
+    done
+  done < <(get_project_dirs)
+
+  # Count orphan real files in central dir (not symlinks)
+  for cat in "${CATEGORIES[@]}"; do
+    for f in "$INSIGHTS_DIR/$cat"/*.md; do
+      [[ -f "$f" && ! -L "$f" ]] || continue
+      cat_counts[$cat]=$(( ${cat_counts[$cat]:-0} + 1 ))
+    done
+  done
+
+  printf '%-15s %s\n' 'CATEGORY' 'COUNT'
+  printf '%-15s %s\n' '--------' '-----'
+
+  for cat in "${CATEGORIES[@]}"; do
+    n=${cat_counts[$cat]:-0}
+    if (( n > 0 )); then
+      printf '%-15s %d\n' "$cat" "$n"
+    fi
+    total=$((total + n))
+  done
+
+  printf '%-15s %s\n' '--------' '-----'
+  printf '%-15s %d\n' 'TOTAL' "$total"
+
+  # Show project breakdown
+  local -i proj_count=0
+  while IFS= read -r pdir; do
+    [[ -d "$pdir/.claude/insights" ]] || continue
+    n=0
+    for f in "$pdir/.claude/insights"/*.md; do
+      [[ -f "$f" && ! -L "$f" && "${f##*/}" != "index.md" ]] || continue
+      n+=1
+    done
+    (( n > 0 )) || continue
+    proj_count+=1
+    printf '  %-50s %d\n' "$pdir" "$n"
+  done < <(get_project_dirs)
+  (( proj_count > 0 )) && printf '\n%d project(s) with insights\n' "$proj_count" || :
+}
+
+# ------------------------------------------------------------------------------
+# cmd_search() - Search across harvested insights
+# Searches project dirs + central orphans. Skips symlinks to avoid dupes.
+# Args: search_term
+# Returns: 0 if matches found, 1 if no matches
+# ------------------------------------------------------------------------------
+cmd_search() {
+  local -- term=$1
+  local -i found=0
+  local -- file cat name title pdir
+
+  # Search project dirs (real files only)
+  while IFS= read -r pdir; do
+    [[ -d "$pdir/.claude/insights" ]] || continue
+    for file in "$pdir/.claude/insights"/*.md; do
+      [[ -f "$file" && ! -L "$file" && "${file##*/}" != "index.md" ]] || continue
+      if grep -qil -- "$term" "$file" 2>/dev/null; then
+        name=${file##*/}; name=${name%.md}
+        cat=${name%-[0-9]*}
+        title=$(head -1 -- "$file" | sed 's/^# //')
+        printf '[%s] %s — %s\n' "$cat" "$name" "$title"
+        printf '  %s\n' "$pdir"
+        grep -i --color=auto -n -- "$term" "$file" | grep -v '<!-- hash:\|<!-- general:' | head -3
+        printf '\n'
+        found+=1
+      fi
+    done
+  done < <(get_project_dirs)
+
+  # Search central orphan files (real files, not symlinks)
+  for file in "$INSIGHTS_DIR"/*/*.md; do
+    [[ -f "$file" && ! -L "$file" ]] || continue
+    if grep -qil -- "$term" "$file" 2>/dev/null; then
+      cat=${file%/*}; cat=${cat##*/}
+      name=${file##*/}; name=${name%.md}
+      title=$(head -1 -- "$file" | sed 's/^# //')
+      printf '[%s] %s — %s (orphan)\n' "$cat" "$name" "$title"
+      grep -i --color=auto -n -- "$term" "$file" | grep -v '<!-- hash:\|<!-- general:' | head -3
+      printf '\n'
+      found+=1
+    fi
+  done
+
+  if (( found == 0 )); then
+    >&2 printf 'No insights matching "%s"\n' "$term"
+    return 1
+  fi
+  >&2 printf '%d insight(s) found.\n' "$found"
+}
+
+# ------------------------------------------------------------------------------
+# cmd_reprocess() - Recategorize, retitle, and reformat all existing insights
+# Uses Batch API (50% discount) with the unified AI prompt.
+# Discovers files from project dirs + central orphans.
+# If category changes, moves the file accordingly.
+# ------------------------------------------------------------------------------
+cmd_reprocess() {
+  load_api_key || die 2 "ANTHROPIC_API_KEY required (set in environment or .env file)"
+
+  local -- file body custom_id json_text cwd_line pdir
+  local -i total=0 updated=0
+  local -a files=()
+
+  # Collect all real insight files from project dirs + central orphans
+  while IFS= read -r pdir; do
+    [[ -d "$pdir/.claude/insights" ]] || continue
+    for file in "$pdir/.claude/insights"/*.md; do
+      [[ -f "$file" && ! -L "$file" && "${file##*/}" != "index.md" ]] || continue
+      files+=("$file")
+    done
+  done < <(get_project_dirs)
+
+  # Central orphan files (real files, not symlinks)
+  for file in "$INSIGHTS_DIR"/*/*.md; do
+    [[ -f "$file" && ! -L "$file" ]] || continue
+    files+=("$file")
+  done
+  total=${#files[@]}
+
+  if (( total == 0 )); then
+    >&2 printf 'No insight files found.\n'
+    return 0
+  fi
+
+  >&2 printf '%s◉%s Building batch request for %d insight files...\n' "$CYAN" "$NC" "$total"
+
+  # Build JSON requests array for Message Batches API
+  local -- requests='['
+  local -i req_count=0
+  local -A file_map=()  # custom_id -> filepath
+
+  for file in "${files[@]}"; do
+    body=$(sed -n '3,/^---$/p' "$file" | sed '$d') || continue
+    [[ -z "$body" ]] && continue
+
+    # Extract CWD context from metadata line (project path)
+    cwd_line=$(grep -oP '(?<=^\*)[^|]+' "$file" | head -1) || cwd_line='unknown'
+    cwd_line=${cwd_line## }; cwd_line=${cwd_line%% }
+
+    # custom_id: unique ID from filepath (md5 to avoid special chars)
+    custom_id=$(printf '%s' "$file" | md5sum | cut -d' ' -f1)
+    file_map[$custom_id]="$file"
+
+    json_text=$(jq -Rs '.' <<< "$body")
+    (( req_count > 0 )) && requests+=','
+    requests+=$(jq -n \
+      --arg id "$custom_id" \
+      --arg system "$AI_SYSTEM_PROMPT" \
+      --argjson user "$json_text" \
+      --arg cwd "$cwd_line" \
+      '{
+        custom_id: $id,
+        params: {
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 300,
+          system: ($system + "\n\nWorking directory context: " + $cwd),
+          messages: [{ role: "user", content: $user }]
+        }
+      }')
+    req_count+=1
+  done
+  requests+=']'
+
+  >&2 printf '  %d requests prepared. Submitting batch...\n' "$req_count"
+
+  # Submit batch (write to tmpfile — payload too large for argv)
+  local -- batch_file batch_response batch_id
+  batch_file=$(mktemp); _TMPFILES+=("$batch_file")
+  printf '{"requests":%s}' "$requests" > "$batch_file"
+  batch_response=$(curl -s --max-time 60 \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d "@$batch_file" \
+    https://api.anthropic.com/v1/messages/batches) || die 1 "Batch submission failed"
+
+  batch_id=$(jq -r '.id // empty' <<< "$batch_response")
+  [[ -z "$batch_id" ]] && die 1 "No batch ID returned: $(jq -r '.error.message // .' <<< "$batch_response")"
+
+  >&2 printf '  Batch %s submitted. Polling for completion...\n' "$batch_id"
+
+  # Poll until batch completes
+  local -- status results_url poll_response succeeded errored
+  while true; do
+    sleep 5
+    poll_response=$(curl -s --max-time 10 \
+      -H "x-api-key: $ANTHROPIC_API_KEY" \
+      -H "anthropic-version: 2023-06-01" \
+      "https://api.anthropic.com/v1/messages/batches/$batch_id") || continue
+
+    status=$(jq -r '.processing_status // empty' <<< "$poll_response")
+    succeeded=$(jq -r '.request_counts.succeeded // 0' <<< "$poll_response")
+    errored=$(jq -r '.request_counts.errored // 0' <<< "$poll_response")
+    >&2 printf '\r  Status: %s (succeeded: %s, errored: %s)' "$status" "$succeeded" "$errored"
+
+    [[ "$status" == "ended" ]] && break
+  done
+  >&2 printf '\n'
+
+  # Retrieve results URL
+  results_url=$(jq -r '.results_url // empty' <<< "$poll_response")
+  [[ -z "$results_url" ]] && die 1 "No results URL in batch response"
+
+  # Download and apply results
+  >&2 printf '  Downloading results...\n'
+  local -- results_data result_line result_type filepath
+  local -- ai_json new_title new_category new_body new_general metadata_line hash_line general_line
+  results_data=$(curl -s --max-time 60 \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    "$results_url") || die 1 "Failed to download results"
+
+  ensure_dirs
+
+  while IFS= read -r result_line; do
+    [[ -z "$result_line" ]] && continue
+    result_type=$(jq -r '.result.type // empty' <<< "$result_line")
+    [[ "$result_type" != "succeeded" ]] && continue
+
+    custom_id=$(jq -r '.custom_id // empty' <<< "$result_line")
+    ai_json=$(jq -r '.result.message.content[0].text // empty' <<< "$result_line")
+
+    # Strip markdown fences (```json ... ```) if present
+    ai_json=${ai_json#\`\`\`json}
+    ai_json=${ai_json#\`\`\`}
+    ai_json=${ai_json%\`\`\`}
+    ai_json=${ai_json#$'\n'}
+    ai_json=${ai_json%$'\n'}
+
+    # Validate AI response JSON
+    if ! jq -e '.title and .category and .body' <<< "$ai_json" &>/dev/null; then
+      continue
+    fi
+
+    new_title=$(jq -r '.title' <<< "$ai_json")
+    new_category=$(jq -r '.category' <<< "$ai_json")
+    [[ -v _VALID_CATS[$new_category] ]] || new_category="general"
+    new_body=$(jq -r '.body' <<< "$ai_json")
+    new_general=$(jq -r '.general // true' <<< "$ai_json")
+
+    filepath="${file_map[$custom_id]:-}"
+    [[ -z "$filepath" || ! -f "$filepath" ]] && continue
+
+    # Extract existing metadata and hash from original file
+    metadata_line=$(grep '^\*' "$filepath" | tail -1) || metadata_line=''
+    hash_line=$(grep -o '<!-- hash: [a-f0-9]* -->' "$filepath") || hash_line=''
+    general_line="<!-- general: $new_general -->"
+
+    # Rewrite file in place with updated content
+    cat > "$filepath" <<EOF
+# $new_title
+
+$new_body
+
+---
+$metadata_line
+$hash_line
+$general_line
+EOF
+    updated+=1
+  done <<< "$results_data"
+
+  >&2 printf '%d file(s) updated (out of %d).\n' "$updated" "$total"
+  (( updated > 0 )) && { generate_index; rebuild_global_links; } || :
+}
+
+# ------------------------------------------------------------------------------
+# cmd_migrate() - One-time migration from central to project-first storage
+# Moves real files from $INSIGHTS_DIR/{cat}/ to {project}/.claude/insights/,
+# leaving symlinks at the original location. Orphans stay in place.
+# Args: --execute to actually do it (default: dry run)
+# ------------------------------------------------------------------------------
+cmd_migrate() {
+  local -i execute=0
+  [[ "${1:-}" == "--execute" ]] && execute=1
+
+  local -- file metadata project_path
+  local -i total=0 migrated=0 orphans=0
+
+  if (( ! execute )); then
+    >&2 printf '%s◉%s Migration dry run (use --migrate --execute to apply)\n' "$CYAN" "$NC"
+    >&2 printf '  Suggestion: run "checkpoint -q" before executing\n\n'
+  else
+    >&2 printf '%s◉%s Executing migration to project-first storage...\n' "$CYAN" "$NC"
+  fi
+
+  for file in "$INSIGHTS_DIR"/*/*.md; do
+    [[ -f "$file" && ! -L "$file" ]] || continue
+    total+=1
+
+    # Extract project path from metadata
+    metadata=$(grep '| session [a-f0-9]' "$file" | tail -1) || { orphans+=1; continue; }
+    project_path=${metadata#\*}
+    project_path=${project_path%% |*}
+    project_path=${project_path## }
+    project_path=${project_path%% }
+
+    # Ensure absolute path
+    [[ "$project_path" == /* ]] || project_path="/$project_path"
+
+    if ! is_valid_project_path "$project_path"; then
+      if (( ! execute )); then
+        >&2 printf '  ORPHAN: %s → stays in central dir\n' "${file##*/}"
+      fi
+      # Add general marker to orphan if missing
+      if (( execute )) && ! grep -q '<!-- general:' "$file" 2>/dev/null; then
+        printf '<!-- general: true -->\n' >> "$file"
+      fi
+      orphans+=1
+      continue
+    fi
+
+    local -- target_dir="$project_path/.claude/insights"
+    local -- filename=${file##*/}
+
+    if (( ! execute )); then
+      >&2 printf '  MOVE: %s → %s/%s\n' "${file##*/}" "$target_dir" "$filename"
+    else
+      mkdir -p "$target_dir" 2>/dev/null || { orphans+=1; continue; }
+      # Add general marker (conservative: true for all existing)
+      if ! grep -q '<!-- general:' "$file" 2>/dev/null; then
+        printf '<!-- general: true -->\n' >> "$file"
+      fi
+      mv -- "$file" "$target_dir/$filename"
+      # Create symlink at original location
+      ln -sf "$target_dir/$filename" "$file"
+      register_project "$project_path"
+    fi
+    migrated+=1
+  done
+
+  >&2 printf '\nMigration summary:\n'
+  >&2 printf '  Total files:  %d\n' "$total"
+  >&2 printf '  To migrate:   %d\n' "$migrated"
+  >&2 printf '  Orphans:      %d (stay in central dir)\n' "$orphans"
+
+  if (( execute && migrated > 0 )); then
+    # Rebuild hashes.list from all locations
+    >&2 printf '  Rebuilding hashes.list...\n'
+    local -A all_hashes=()
+    local -- hash pdir
+    while IFS= read -r pdir; do
+      [[ -d "$pdir/.claude/insights" ]] || continue
+      while IFS= read -r hash; do
+        all_hashes[$hash]=1
+      done < <(grep -ohP '(?<=<!-- hash: )[a-f0-9]+' "$pdir/.claude/insights"/*.md 2>/dev/null || true)
+    done < <(get_project_dirs)
+    while IFS= read -r hash; do
+      all_hashes[$hash]=1
+    done < <(grep -ohP '(?<=<!-- hash: )[a-f0-9]+' "$INSIGHTS_DIR"/*/*.md 2>/dev/null || true)
+    printf '%s\n' "${!all_hashes[@]}" > "$HASHES_FILE"
+
+    # Rebuild everything
+    rebuild_global_links
+    generate_index
+
+    >&2 printf '  Migration complete.\n'
+  elif (( ! execute )); then
+    >&2 printf '\nDry run complete. Use --migrate --execute to apply.\n'
+  fi
+}
+
+# ==============================================================================
+# Main
+# ==============================================================================
+main() {
+  case ${1:-} in
+    --full)
+      FULL_MODE=1
+      cmd_harvest
+      ;;
+    --no-ai)
+      NO_AI=1
+      FULL_MODE=1
+      cmd_harvest
+      ;;
+    --reprocess)
+      cmd_reprocess
+      ;;
+    --rebuild-links)
+      ensure_dirs
+      init_state
+      rebuild_global_links
+      ;;
+    --project-links)
+      # Backwards compat alias
+      ensure_dirs
+      init_state
+      rebuild_global_links
+      ;;
+    --migrate)
+      ensure_dirs
+      init_state
+      cmd_migrate "${2:-}"
+      ;;
+    --stats)
+      init_state
+      cmd_stats
+      ;;
+    --search)
+      [[ -z "${2:-}" ]] && die 22 "Usage: $SCRIPT_NAME --search TERM"
+      init_state
+      cmd_search "$2"
+      ;;
+    --version|-V)
+      printf '%s %s\n' "$SCRIPT_NAME" "$VERSION"
+      ;;
+    --help|-h)
+      cmd_help
+      ;;
+    "")
+      cmd_harvest
+      ;;
+    *)
+      die 22 "Unknown option: $1 (try --help)"
+      ;;
+  esac
+}
+
+main "$@"
+#fin

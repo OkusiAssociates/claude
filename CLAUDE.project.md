@@ -23,7 +23,7 @@
   - Use integer values where appropriate, and always declare with `-i`
   - Always use `var+=1`; never `((var++))`, `((var+=1))`, or `((++var))` - the post-increment returns the original value which can cause non-zero exit codes with `set -e`
   - Always end scripts with line '#fin' to indicate end of script, with a blank linefeed at the end
-  - If it is necessary to refer to BASH-CODING-STANDARD.md, always use the form [BASH-CODING-STANDARD](https://github.com/Open-Technology-Foundation/bash-coding-standard)
+  - Follow [BASH-CODING-STANDARD](https://github.com/Open-Technology-Foundation/bash-coding-standard); use `bcscheck <script>` to verify compliance
 
 - PHP:
   - Always use 2-space indent

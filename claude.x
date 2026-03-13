@@ -4,9 +4,14 @@
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION=1.2.0
+declare -r VERSION=1.3.0
+#shellcheck disable=SC2155
 declare -r SCRIPT_PATH=$(realpath -e -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
+
+declare -a OLLAMA_MODELS=('glm-5:cloud' 'qwen3.5:cloud' 'minimax-m2.5:cloud')
+declare -r OLLAMA_MODEL=${OLLAMA_MODEL:-'glm-5:cloud'}
+declare -a CMD=()
 
 declare -- AGENTS_JSON=${AGENTS_JSON:-"$SCRIPT_DIR"/agents/Agents.json}
 if [[ ! -f "$AGENTS_JSON" ]]; then
@@ -34,6 +39,15 @@ die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 
 # Pluralization helper: returns 's' unless count is 1
 s() { (( ${1:-1} == 1 )) || echo -n 's'; }
+
+find_claude() {
+  command -v claude 2>/dev/null && return
+  local -- p
+  for p in "$HOME"/.local/bin/claude /usr/local/bin/claude /usr/bin/claude; do
+    [[ -x "$p" ]] && echo "$p" && return
+  done
+  return 1
+}
 
 has_conversation() {
   # Check if a conversation exists for the current directory
@@ -64,7 +78,8 @@ USAGE
 OPTIONS
     -T AGENT            Load agent template (see Available Agents below)
                         Case-insensitive matching supported
-
+    -O, --ollama        Launch with ollama model
+                        (${OLLAMA_MODELS[@]@Q})
     -n, --new           Start fresh conversation (don't continue previous)
     -c, --continue      Force continue previous conversation
     --no-continue       Alias for --new
@@ -151,8 +166,11 @@ NOTES
 
 ENVIRONMENT
     AGENTS_JSON         Override path to Agents.json
+                        (default: $AGENTS_JSON)
     CLAUDE_CODE_MAX_OUTPUT_TOKENS
                         Max output tokens (default: 32000)
+    OLLAMA_MODEL        Define ollama model to use
+                        (default: $OLLAMA_MODEL)
 
 EXIT CODES
     0   Success
@@ -165,13 +183,13 @@ declare -ar addDirDefaultDirs=(
  "$HOME"
  /tmp
  /ai
- /usr/local/
+ /usr/local
  /usr/share
 )
 
 main() {
   local -a reference_files=()
-  local -- agent_tag agent_key systemprompt ref_file
+  local -- agent_tag agent_key systemprompt ref_file ollama
 
   [[ -n "$AGENTS_JSON" ]] || die 1 'Agents.json not found'
 
@@ -189,7 +207,7 @@ main() {
     case $1 in
       -V|--version)
         echo "$SCRIPT_NAME $VERSION"
-        "$(command -v claude)" --version
+        "$(find_claude)" --version
         return 0
         ;;
       -h|--help)
@@ -231,6 +249,12 @@ main() {
             [[ -f "$ref_file" ]] && claude_cmd+=(--append-system-prompt "$(<"$ref_file")")
           done
         fi
+        ;;
+
+      -O|--ollama)
+        ollama=$(command -v ollama)
+        [[ -n $ollama ]] || die 1 'Ollama not installed'
+        CMD=("$ollama" launch claude --model "$OLLAMA_MODEL" --)
         ;;
 
       --allowedTools)
@@ -287,7 +311,7 @@ main() {
         break
         ;;
 
-      -[VhcnTvq]?*) set -- "${1:0:2}" "-${1:2}" "${@:2}"; continue ;;
+      -[VhcnTOvq]?*) set -- "${1:0:2}" "-${1:2}" "${@:2}"; continue ;;
 
       -*)
         claude_cmd+=("$1")
@@ -299,6 +323,10 @@ main() {
     esac
     shift || break
   done
+
+  if ! ((${#CMD[@]})); then
+    CMD=("$(find_claude)") || die 1 'claude not found in PATH or ~/.local/bin'
+  fi
 
   # Handle conversation continuation
   if ((continue_flag == -1)); then
@@ -336,7 +364,7 @@ main() {
     echo -ne "\033]0;◯ ${agent_tag:-claude.x} .../$(basename -- "$PWD")\007"
   fi
 
-  exec "$(command -v claude)" "${claude_cmd[@]}"
+  exec "${CMD[@]}" "${claude_cmd[@]}"
 }
 
 main "$@"
